@@ -1,330 +1,1505 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Mivtzah Sventzich</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        /* Hides the input box but keeps it focusable for the NFC wedge */
-        .nfc-invisible { opacity: 0; position: absolute; top: -100px; }
-        /* Smooth transitions */
-        .fade-in { animation: fadeIn 0.3s ease-in; }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mivtzah Sventzich</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@300;400;500;600&family=Cormorant+Garamond:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  /* ── RESET & BASE ── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --navy:       #0A1628;
+    --navy-mid:   #1E3A5F;
+    --navy-light: #2A4A7F;
+    --gold:       #C9A84C;
+    --gold-light: #E8C96A;
+    --gold-dim:   #9A7A30;
+    --parchment:  #F5F0E8;
+    --warm-white: #FDFAF5;
+    --border:     #E0D8C8;
+    --text-dark:  #1A1408;
+    --text-mid:   #4A4030;
+    --text-soft:  #8A7A60;
+    --green:      #2E7D52;
+    --red:        #C0392B;
+    --admin-bg:   #F4F6F8;
+    --admin-border: #DDE2EA;
+    --admin-blue: #2563EB;
+  }
+  html, body { height: 100%; font-family: 'Inter', sans-serif; }
+  body { background: var(--navy); color: var(--parchment); }
+
+  /* ── PAGES ── */
+  .page { display: none; min-height: 100vh; }
+  .page.active { display: flex; }
+
+  /* ═══════════════════════════════════════
+     LOGIN PAGE
+  ═══════════════════════════════════════ */
+  #page-login {
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: var(--navy);
+    position: relative;
+    overflow: hidden;
+  }
+  #page-login::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 80% 60% at 50% 0%, rgba(201,168,76,0.07) 0%, transparent 70%),
+      radial-gradient(ellipse 60% 40% at 50% 100%, rgba(201,168,76,0.04) 0%, transparent 60%);
+    pointer-events: none;
+  }
+  .login-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    z-index: 1;
+    padding: 40px 24px;
+    max-width: 460px;
+    width: 100%;
+  }
+  .login-rebbe-frame {
+    position: relative;
+    margin-bottom: 28px;
+  }
+  .login-rebbe-img {
+    width: 200px;
+    height: 250px;
+    object-fit: cover;
+    object-position: top center;
+    border-radius: 4px;
+    display: block;
+    border: 2px solid rgba(201,168,76,0.4);
+  }
+  .login-rebbe-frame::after {
+    content: '';
+    position: absolute;
+    bottom: -12px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 140px;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+  }
+  .login-logo-block {
+    margin-top: 24px;
+    text-align: center;
+    margin-bottom: 36px;
+  }
+  .login-logo-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--gold);
+    line-height: 1.4;
+  }
+  .login-logo-sub {
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(201,168,76,0.55);
+    margin-top: 5px;
+  }
+  .login-divider {
+    width: 48px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--gold-dim), transparent);
+    margin: 14px auto;
+  }
+  .login-program-name {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 28px;
+    font-weight: 600;
+    color: var(--warm-white);
+    letter-spacing: 0.04em;
+    text-align: center;
+    line-height: 1.2;
+  }
+  .login-scan-area {
+    text-align: center;
+    margin-bottom: 10px;
+  }
+  .login-scan-label {
+    font-size: 12px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.3);
+    margin-bottom: 14px;
+  }
+  .nfc-icon {
+    width: 56px;
+    height: 56px;
+    margin: 0 auto 14px;
+    opacity: 0.4;
+  }
+  .nfc-pulse {
+    animation: pulse-ring 2s ease-out infinite;
+  }
+  @keyframes pulse-ring {
+    0% { opacity: 0.4; }
+    50% { opacity: 0.7; }
+    100% { opacity: 0.4; }
+  }
+  #nfc-input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+    width: 1px;
+    height: 1px;
+  }
+  .login-status {
+    font-size: 13px;
+    color: rgba(255,255,255,0.35);
+    margin-top: 8px;
+    min-height: 20px;
+    transition: color 0.3s;
+  }
+  .login-status.error { color: #E87070; }
+  .login-status.success { color: var(--gold-light); }
+  .login-admin-link {
+    position: fixed;
+    bottom: 20px;
+    right: 24px;
+    font-size: 10px;
+    color: rgba(255,255,255,0.1);
+    text-decoration: none;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+    transition: color 0.3s;
+    background: none; border: none;
+  }
+  .login-admin-link:hover { color: rgba(255,255,255,0.35); }
+
+  /* ═══════════════════════════════════════
+     CAMPER DASHBOARD
+  ═══════════════════════════════════════ */
+  #page-dashboard {
+    flex-direction: column;
+    background: var(--warm-white);
+    color: var(--text-dark);
+    min-height: 100vh;
+  }
+  .dash-header {
+    background: var(--navy);
+    padding: 20px 28px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: relative;
+  }
+  .dash-header::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+  }
+  .dash-greeting {
+    display: flex;
+    flex-direction: column;
+  }
+  .dash-hello {
+    font-size: 12px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.4);
+  }
+  .dash-name {
+    font-family: 'Playfair Display', serif;
+    font-size: 24px;
+    font-weight: 600;
+    color: var(--warm-white);
+    letter-spacing: 0.02em;
+  }
+  .dash-score-pill {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: rgba(201,168,76,0.12);
+    border: 1px solid rgba(201,168,76,0.3);
+    border-radius: 12px;
+    padding: 10px 22px;
+  }
+  .dash-score-label {
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(201,168,76,0.7);
+    margin-bottom: 2px;
+  }
+  .dash-score-value {
+    font-family: 'Playfair Display', serif;
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--gold-light);
+    line-height: 1;
+  }
+  .dash-score-pts {
+    font-size: 10px;
+    color: rgba(201,168,76,0.5);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .dash-body {
+    flex: 1;
+    padding: 28px 24px 100px;
+    max-width: 600px;
+    margin: 0 auto;
+    width: 100%;
+  }
+  .dash-section-label {
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--text-soft);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .dash-section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+  .dash-date-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--navy);
+    color: var(--gold);
+    border-radius: 20px;
+    padding: 5px 14px;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    margin-bottom: 20px;
+  }
+  .checklist-card {
+    background: white;
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  }
+  .checklist-item {
+    display: flex;
+    align-items: center;
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--border);
+    gap: 16px;
+    transition: background 0.15s;
+  }
+  .checklist-item:last-child { border-bottom: none; }
+  .checklist-item:hover { background: #FAFAF8; }
+  .checklist-num {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-soft);
+    width: 20px;
+    flex-shrink: 0;
+    text-align: center;
+  }
+  .checklist-q {
+    flex: 1;
+    font-size: 15px;
+    font-weight: 400;
+    color: var(--text-dark);
+    line-height: 1.4;
+  }
+  .checklist-pts {
+    font-size: 11px;
+    color: var(--text-soft);
+    margin-right: 4px;
+    white-space: nowrap;
+  }
+  .toggle-wrap {
+    display: flex;
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .toggle-btn {
+    padding: 7px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    border: none;
+    background: white;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    color: var(--text-soft);
+  }
+  .toggle-btn.yes.active { background: var(--green); color: white; }
+  .toggle-btn.no.active  { background: var(--red);   color: white; }
+  .toggle-btn:not(.active):hover { background: #F0EDE8; }
+  .dash-footer {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    padding: 14px 24px 20px;
+    background: linear-gradient(to top, var(--warm-white) 70%, transparent);
+    display: flex;
+    justify-content: center;
+    pointer-events: none;
+  }
+  .btn-submit {
+    pointer-events: auto;
+    background: var(--navy);
+    color: var(--gold-light);
+    border: 1.5px solid rgba(201,168,76,0.4);
+    border-radius: 12px;
+    padding: 16px 56px;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s, transform 0.1s;
+    box-shadow: 0 4px 20px rgba(10,22,40,0.3);
+  }
+  .btn-submit:hover { background: var(--navy-mid); border-color: var(--gold); }
+  .btn-submit:active { transform: scale(0.97); }
+  .already-submitted-banner {
+    background: linear-gradient(135deg, #EFF8F3, #E8F5EE);
+    border: 1px solid #A8D5B8;
+    border-radius: 12px;
+    padding: 18px 20px;
+    text-align: center;
+    color: var(--green);
+    font-weight: 600;
+    font-size: 15px;
+    margin-bottom: 20px;
+  }
+
+  /* ── MODAL ── */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(10,22,40,0.65);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal-box {
+    background: white;
+    border-radius: 20px;
+    padding: 40px 48px;
+    text-align: center;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.3);
+    animation: modal-in 0.3s cubic-bezier(0.34,1.56,0.64,1);
+  }
+  @keyframes modal-in {
+    from { opacity: 0; transform: scale(0.85) translateY(16px); }
+    to   { opacity: 1; transform: scale(1) translateY(0); }
+  }
+  .modal-check {
+    width: 64px; height: 64px;
+    background: var(--green);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 18px;
+  }
+  .modal-check svg { width: 32px; height: 32px; }
+  .modal-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 26px;
+    font-weight: 600;
+    color: var(--text-dark);
+    margin-bottom: 8px;
+  }
+  .modal-sub { font-size: 14px; color: var(--text-soft); }
+
+  /* ═══════════════════════════════════════
+     ADMIN PAGES
+  ═══════════════════════════════════════ */
+  #page-admin {
+    flex-direction: column;
+    background: var(--admin-bg);
+    color: var(--text-dark);
+    min-height: 100vh;
+  }
+  .admin-header {
+    background: var(--navy);
+    color: white;
+    padding: 14px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 2px solid var(--gold-dim);
+  }
+  .admin-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 20px;
+    color: var(--gold-light);
+    letter-spacing: 0.04em;
+  }
+  .admin-subtitle { font-size: 12px; color: rgba(255,255,255,0.4); margin-top: 2px; }
+  .admin-nav {
+    display: flex;
+    gap: 4px;
+    padding: 0 28px;
+    background: white;
+    border-bottom: 1px solid var(--admin-border);
+    overflow-x: auto;
+  }
+  .admin-tab {
+    padding: 13px 18px;
+    font-size: 13px;
+    font-weight: 500;
+    border: none;
+    background: none;
+    cursor: pointer;
+    color: #666;
+    border-bottom: 2px solid transparent;
+    transition: color 0.2s, border-color 0.2s;
+    white-space: nowrap;
+  }
+  .admin-tab.active { color: var(--admin-blue); border-bottom-color: var(--admin-blue); }
+  .admin-tab:hover:not(.active) { color: var(--text-dark); }
+  .admin-content { flex: 1; padding: 24px 28px; max-width: 1100px; }
+  .admin-panel { display: none; }
+  .admin-panel.active { display: block; }
+  .admin-card {
+    background: white;
+    border-radius: 10px;
+    border: 1px solid var(--admin-border);
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .admin-card h3 {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 14px;
+    color: var(--text-dark);
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--admin-border);
+  }
+  .form-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+  .form-group { display: flex; flex-direction: column; gap: 5px; }
+  .form-group label { font-size: 12px; color: #666; font-weight: 500; }
+  .form-group input, .form-group select {
+    padding: 9px 12px;
+    border: 1px solid var(--admin-border);
+    border-radius: 7px;
+    font-size: 14px;
+    font-family: 'Inter', sans-serif;
+    background: white;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .form-group input:focus, .form-group select:focus { border-color: var(--admin-blue); }
+  .btn {
+    padding: 9px 18px;
+    border-radius: 7px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: background 0.15s, opacity 0.15s;
+    font-family: 'Inter', sans-serif;
+  }
+  .btn-primary { background: var(--admin-blue); color: white; }
+  .btn-primary:hover { background: #1d4ed8; }
+  .btn-danger { background: #EF4444; color: white; }
+  .btn-danger:hover { background: #DC2626; }
+  .btn-ghost { background: white; border-color: var(--admin-border); color: var(--text-dark); }
+  .btn-ghost:hover { background: var(--admin-bg); }
+  .btn-sm { padding: 6px 12px; font-size: 12px; }
+  .btn-success { background: #10B981; color: white; }
+  .btn-success:hover { background: #059669; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th {
+    text-align: left;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #888;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--admin-border);
+    font-weight: 500;
+  }
+  td {
+    padding: 11px 12px;
+    border-bottom: 1px solid #F0F0F0;
+    color: var(--text-dark);
+    vertical-align: middle;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #F8F9FB; }
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .badge-green { background: #D1FAE5; color: #065F46; }
+  .badge-red   { background: #FEE2E2; color: #991B1B; }
+  .badge-gold  { background: #FEF3C7; color: #92400E; }
+  .question-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  .question-row input[type="text"] {
+    flex: 1;
+    padding: 9px 12px;
+    border: 1px solid var(--admin-border);
+    border-radius: 7px;
+    font-size: 14px;
+    font-family: 'Inter', sans-serif;
+    outline: none;
+  }
+  .question-row input[type="text"]:focus { border-color: var(--admin-blue); }
+  .question-row input[type="number"] {
+    width: 70px;
+    padding: 9px 12px;
+    border: 1px solid var(--admin-border);
+    border-radius: 7px;
+    font-size: 14px;
+    font-family: 'Inter', sans-serif;
+    outline: none;
+    text-align: center;
+  }
+  .question-row input[type="number"]:focus { border-color: var(--admin-blue); }
+  .q-num {
+    width: 24px;
+    height: 24px;
+    background: var(--navy);
+    color: var(--gold);
+    border-radius: 50%;
+    font-size: 12px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .report-split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  .report-list {
+    background: white;
+    border-radius: 10px;
+    border: 1px solid var(--admin-border);
+    overflow: hidden;
+  }
+  .report-list-header {
+    padding: 14px 18px;
+    font-weight: 600;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .report-list-header.eligible   { background: #D1FAE5; color: #065F46; }
+  .report-list-header.ineligible { background: #FEE2E2; color: #991B1B; }
+  .report-list-body { padding: 8px 0; }
+  .report-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 18px;
+    font-size: 14px;
+    border-bottom: 1px solid #F5F5F5;
+  }
+  .report-item:last-child { border-bottom: none; }
+  .report-item-pts { font-weight: 600; color: var(--admin-blue); }
+  .threshold-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 16px;
+  }
+  .threshold-row label { font-size: 14px; font-weight: 500; }
+  .threshold-row input {
+    width: 90px;
+    padding: 9px 12px;
+    border: 1px solid var(--admin-border);
+    border-radius: 7px;
+    font-size: 15px;
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    text-align: center;
+    outline: none;
+  }
+  .threshold-row input:focus { border-color: var(--admin-blue); }
+  .admin-back-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--admin-blue);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    margin-bottom: 18px;
+  }
+  .admin-back-btn:hover { text-decoration: underline; }
+  .day-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+  .day-cell {
+    background: white;
+    border: 1px solid var(--admin-border);
+    border-radius: 8px;
+    padding: 12px;
+    cursor: pointer;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .day-cell:hover { border-color: var(--admin-blue); box-shadow: 0 0 0 2px rgba(37,99,235,0.1); }
+  .day-cell-date { font-size: 12px; color: #888; margin-bottom: 4px; }
+  .day-cell-pts  { font-size: 18px; font-weight: 700; color: var(--admin-blue); }
+  .day-cell-sub  { font-size: 11px; color: #888; }
+  .ans-grid { display: flex; flex-direction: column; gap: 10px; }
+  .ans-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: #F8F9FB;
+    border-radius: 8px;
+  }
+  .ans-q { flex: 1; font-size: 14px; }
+  .ans-toggle { display: flex; gap: 6px; }
+  .ans-btn {
+    padding: 6px 16px;
+    border-radius: 6px;
+    border: 1.5px solid var(--admin-border);
+    background: white;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    color: #888;
+  }
+  .ans-btn.yes.active { background: var(--green); border-color: var(--green); color: white; }
+  .ans-btn.no.active  { background: var(--red);   border-color: var(--red);   color: white; }
+  .pts-override-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    background: #FFFBEB;
+    border: 1px solid #FDE68A;
+    border-radius: 8px;
+    margin-top: 8px;
+  }
+  .pts-override-row label { font-size: 14px; font-weight: 500; }
+  .pts-override-row input {
+    width: 90px;
+    padding: 8px 12px;
+    border: 1px solid var(--admin-border);
+    border-radius: 7px;
+    font-size: 15px;
+    font-weight: 700;
+    text-align: center;
+    outline: none;
+  }
+  .alert { padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 12px; }
+  .alert-success { background: #D1FAE5; color: #065F46; border: 1px solid #A7F3D0; }
+  .alert-error   { background: #FEE2E2; color: #991B1B; border: 1px solid #FECACA; }
+  .empty-state { padding: 32px; text-align: center; color: #AAA; font-size: 14px; }
+  .nfc-id-display {
+    font-family: monospace;
+    font-size: 12px;
+    background: #F0F0F0;
+    padding: 2px 8px;
+    border-radius: 4px;
+    color: #666;
+  }
+  .admin-nav-back {
+    font-size: 13px;
+    color: rgba(255,255,255,0.5);
+    cursor: pointer;
+    background: none;
+    border: none;
+    letter-spacing: 0.05em;
+    transition: color 0.2s;
+  }
+  .admin-nav-back:hover { color: var(--gold-light); }
+</style>
 </head>
-<body class="bg-gray-100 text-gray-800 font-sans antialiased overflow-hidden selection:bg-blue-200">
+<body>
 
-    <!-- 1. LOGIN SCREEN -->
-    <div id="view-login" class="view-section flex flex-col items-center justify-center h-screen bg-white">
-        <div class="text-center max-w-md p-8">
-            <!-- Placeholder for Rebbe Picture -->
-            <img src="https://chabad.org/images/new/placeholder.jpg" alt="The Rebbe" class="w-64 h-80 object-cover mx-auto rounded shadow-lg mb-6 border-4 border-gray-200" id="rebbe-img">
-            
-            <!-- YKP Logo Placeholder -->
-            <h1 class="text-3xl font-bold text-blue-900 mb-2 tracking-tight">Yeshivas Kayitz Program</h1>
-            <h2 class="text-xl text-gray-500 mb-8 font-medium">Mivtzah Sventzich</h2>
-            
-            <p class="text-gray-400 text-sm animate-pulse">Tap your card to log in...</p>
-            
-            <!-- Hidden Input for NFC Wedge -->
-            <!-- Keyboard wedges type the ID and automatically press "Enter" -->
-            <input type="text" id="nfc-input" class="nfc-invisible" autofocus autocomplete="off">
+<!-- ═══════════════════ LOGIN PAGE ═══════════════════ -->
+<div id="page-login" class="page active">
+  <input id="nfc-input" type="text" autocomplete="off" autofocus>
+  <div class="login-inner">
+    <div class="login-rebbe-frame">
+      <!-- Replace src with your preferred Rebbe image URL -->
+      <img
+        id="rebbe-img"
+        class="login-rebbe-img"
+        src="https://www.chabad.org/media/images/973/aYIk9732349.jpg"
+        alt="The Lubavitcher Rebbe"
+        onerror="this.src='data:image/svg+xml,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'200\' height=\'250\' viewBox=\'0 0 200 250\'><rect fill=\'%231E3A5F\' width=\'200\' height=\'250\' rx=\'4\'/><text x=\'50%25\' y=\'50%25\' dominant-baseline=\'middle\' text-anchor=\'middle\' fill=\'%23C9A84C\' font-family=\'serif\' font-size=\'12\'>Rebbe Photo</text></svg>'"
+      >
+    </div>
+    <div class="login-logo-block">
+      <div class="login-logo-title">Yeshivas Kayitz Program</div>
+      <div class="login-divider"></div>
+      <div class="login-program-name">מבצע שוועצינג׳</div>
+      <div class="login-logo-sub">Mivtzah Sventzich</div>
+    </div>
+    <div class="login-scan-area">
+      <div class="login-scan-label">Scan NFC Card to Sign In</div>
+      <svg class="nfc-icon nfc-pulse" viewBox="0 0 56 56" fill="none">
+        <circle cx="28" cy="28" r="26" stroke="#C9A84C" stroke-width="1.5" stroke-dasharray="4 3"/>
+        <path d="M20 28c0-4.4 3.6-8 8-8" stroke="#C9A84C" stroke-width="2" stroke-linecap="round"/>
+        <path d="M16 28c0-6.6 5.4-12 12-12" stroke="#C9A84C" stroke-width="1.5" stroke-linecap="round" opacity="0.6"/>
+        <path d="M24 28c0-2.2 1.8-4 4-4" stroke="#C9A84C" stroke-width="2" stroke-linecap="round"/>
+        <circle cx="28" cy="28" r="2" fill="#C9A84C"/>
+      </svg>
+    </div>
+    <div id="login-status" class="login-status">Ready for card scan…</div>
+  </div>
+  <button class="login-admin-link" onclick="goAdmin()">Admin</button>
+</div>
+
+<!-- ═══════════════════ CAMPER DASHBOARD ═══════════════════ -->
+<div id="page-dashboard" class="page">
+  <div class="dash-header">
+    <div class="dash-greeting">
+      <span class="dash-hello">Welcome back,</span>
+      <span class="dash-name" id="dash-name">—</span>
+    </div>
+    <div class="dash-score-pill">
+      <div class="dash-score-label">Total Points</div>
+      <div class="dash-score-value" id="dash-score">0</div>
+      <div class="dash-score-pts">pts</div>
+    </div>
+  </div>
+  <div class="dash-body">
+    <div class="dash-section-label">Daily Duch</div>
+    <div class="dash-date-badge">
+      📅 <span id="dash-date-label">—</span>
+    </div>
+    <div id="already-submitted-banner" class="already-submitted-banner" style="display:none;">
+      ✅ You've already submitted today's Duch!
+    </div>
+    <div class="checklist-card" id="checklist-card">
+      <div id="checklist-items"></div>
+    </div>
+  </div>
+  <div class="dash-footer">
+    <button class="btn-submit" id="submit-btn" onclick="submitDuch()">Submit Duch</button>
+  </div>
+</div>
+
+<!-- ═══════════════════ SUBMITTED MODAL ═══════════════════ -->
+<div class="modal-overlay" id="submit-modal">
+  <div class="modal-box">
+    <div class="modal-check">
+      <svg viewBox="0 0 32 32" fill="none">
+        <path d="M6 16l8 8 12-12" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div class="modal-title">Submitted!</div>
+    <div class="modal-sub" id="modal-pts-msg">Great work today.</div>
+  </div>
+</div>
+
+<!-- ═══════════════════ ADMIN PAGE ═══════════════════ -->
+<div id="page-admin" class="page">
+  <div class="admin-header">
+    <div>
+      <div class="admin-title">Mivtzah Sventzich — Admin</div>
+      <div class="admin-subtitle">Camp Management Dashboard</div>
+    </div>
+    <button class="admin-nav-back" onclick="goLogin()">← Back to Login</button>
+  </div>
+  <div class="admin-nav">
+    <button class="admin-tab active" data-panel="campers" onclick="switchPanel('campers',this)">Campers</button>
+    <button class="admin-tab" data-panel="questions" onclick="switchPanel('questions',this)">Mivtzah Config</button>
+    <button class="admin-tab" data-panel="report" onclick="switchPanel('report',this)">Weekly Report</button>
+  </div>
+  <div class="admin-content">
+
+    <!-- PANEL: CAMPERS -->
+    <div id="panel-campers" class="admin-panel active">
+      <!-- Sub-views: list | profile -->
+      <div id="admin-campers-list">
+        <div class="admin-card">
+          <h3>Add New Camper</h3>
+          <div class="form-row">
+            <div class="form-group">
+              <label>First Name</label>
+              <input type="text" id="add-first" placeholder="Mendy">
+            </div>
+            <div class="form-group">
+              <label>Last Name</label>
+              <input type="text" id="add-last" placeholder="Cohen">
+            </div>
+            <div class="form-group">
+              <label>NFC Card ID (optional)</label>
+              <input type="text" id="add-nfc" placeholder="scan or type ID">
+            </div>
+            <div class="form-group" style="justify-content:flex-end">
+              <button class="btn btn-primary" onclick="addCamper()">Add Camper</button>
+            </div>
+          </div>
+          <div id="add-camper-msg"></div>
         </div>
+        <div class="admin-card">
+          <h3>All Campers</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>NFC Card ID</th>
+                <th>Total Points</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="campers-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Camper profile / edit view -->
+      <div id="admin-camper-profile" style="display:none;">
+        <button class="admin-back-btn" onclick="closeCamperProfile()">← Back to All Campers</button>
+        <div class="admin-card">
+          <h3 id="profile-title">Camper Profile</h3>
+          <div class="form-row" style="margin-bottom:8px;">
+            <div class="form-group">
+              <label>First Name</label>
+              <input type="text" id="profile-first">
+            </div>
+            <div class="form-group">
+              <label>Last Name</label>
+              <input type="text" id="profile-last">
+            </div>
+            <div class="form-group">
+              <label>NFC Card ID</label>
+              <input type="text" id="profile-nfc" placeholder="Tap card or type ID">
+            </div>
+            <div class="form-group" style="justify-content:flex-end">
+              <button class="btn btn-primary" onclick="saveProfile()">Save</button>
+            </div>
+          </div>
+          <div id="profile-save-msg"></div>
+        </div>
+        <div class="admin-card">
+          <h3>Daily Submissions — Select a Day to Edit</h3>
+          <div class="day-grid" id="profile-days-grid"></div>
+        </div>
+        <div id="profile-day-editor" style="display:none;">
+          <div class="admin-card">
+            <h3 id="day-editor-title">Edit Day</h3>
+            <div class="pts-override-row" style="margin-bottom:14px;">
+              <label>Manual Point Override for this Day:</label>
+              <input type="number" id="day-pts-override" min="0">
+              <span style="font-size:12px;color:#888;">Leave blank to auto-calculate</span>
+            </div>
+            <div class="ans-grid" id="day-ans-grid"></div>
+            <div style="margin-top:14px; display:flex; gap:10px;">
+              <button class="btn btn-success" onclick="saveDayEdit()">Save Changes</button>
+              <button class="btn btn-ghost" onclick="closeDayEditor()">Cancel</button>
+            </div>
+            <div id="day-edit-msg" style="margin-top:8px;"></div>
+          </div>
+        </div>
+        <div class="admin-card">
+          <h3>Total Points Override</h3>
+          <div class="pts-override-row">
+            <label>Override Total Points:</label>
+            <input type="number" id="total-pts-override" min="0" id="total-pts-override">
+            <button class="btn btn-primary" onclick="saveTotalOverride()">Apply</button>
+          </div>
+          <div id="total-override-msg" style="margin-top:8px;"></div>
+        </div>
+      </div>
     </div>
 
-    <!-- 2. CAMPER DASHBOARD -->
-    <div id="view-camper" class="view-section hidden flex flex-col h-screen bg-gray-50 fade-in">
-        <div class="bg-blue-900 text-white p-6 shadow-md flex justify-between items-center rounded-b-2xl">
-            <div>
-                <h2 class="text-2xl font-bold" id="camper-name-display">Welcome!</h2>
-                <p class="text-blue-200 text-sm">Today's Duch</p>
-            </div>
-            <div class="text-right">
-                <p class="text-sm text-blue-200">Total Points</p>
-                <p class="text-4xl font-black text-yellow-400" id="camper-points-display">0</p>
-            </div>
+    <!-- PANEL: QUESTIONS -->
+    <div id="panel-questions" class="admin-panel">
+      <div class="admin-card">
+        <h3>Weekly Event Threshold</h3>
+        <div class="threshold-row">
+          <label>Points needed to qualify:</label>
+          <input type="number" id="threshold-input" min="0">
+          <button class="btn btn-primary" onclick="saveThreshold()">Save</button>
         </div>
-
-        <div class="flex-1 overflow-y-auto p-6">
-            <div class="max-w-2xl mx-auto bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-                <form id="duch-form" class="space-y-6"></form>
-            </div>
+        <div id="threshold-msg"></div>
+      </div>
+      <div class="admin-card">
+        <h3>Duch Questions & Point Values</h3>
+        <div id="questions-editor"></div>
+        <div style="margin-top:14px; display:flex; gap:10px; align-items:center;">
+          <button class="btn btn-primary" onclick="saveQuestions()">Save Questions</button>
+          <span style="font-size:12px;color:#888;">Changes affect all future submissions.</span>
         </div>
-
-        <div class="p-6 bg-white border-t border-gray-200">
-            <button onclick="submitDuch()" class="w-full max-w-2xl mx-auto block bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg text-xl transition-transform active:scale-95">
-                Submit Duch
-            </button>
-        </div>
+        <div id="questions-msg" style="margin-top:8px;"></div>
+      </div>
     </div>
 
-    <!-- 3. ADMIN DASHBOARD (Accessed via URL #admin) -->
-    <div id="view-admin" class="view-section hidden h-screen overflow-y-auto bg-gray-100 p-8 fade-in">
-        <div class="max-w-5xl mx-auto">
-            <div class="flex justify-between items-center mb-8">
-                <h1 class="text-3xl font-bold text-gray-800">Admin Panel: Mivtzah Sventzich</h1>
-                <button onclick="window.location.hash=''" class="bg-gray-300 hover:bg-gray-400 text-gray-800 px-4 py-2 rounded">Back to Login</button>
-            </div>
-
-            <!-- Dashboard Grid -->
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                
-                <!-- Manage Campers -->
-                <div class="col-span-2 bg-white p-6 rounded-lg shadow-sm border">
-                    <h2 class="text-xl font-bold mb-4">Campers & Event Eligibility</h2>
-                    <div class="mb-4 flex gap-2">
-                        <input type="text" id="new-camper-name" placeholder="Camper Name" class="border p-2 rounded w-1/3">
-                        <input type="text" id="new-camper-nfc" placeholder="NFC ID (Scan card)" class="border p-2 rounded w-1/3">
-                        <button onclick="addCamper()" class="bg-green-600 text-white px-4 py-2 rounded font-bold">Add Camper</button>
-                    </div>
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-left border-collapse">
-                            <thead>
-                                <tr class="bg-gray-100 text-gray-600 text-sm">
-                                    <th class="p-3 border-b">Name</th>
-                                    <th class="p-3 border-b">NFC ID</th>
-                                    <th class="p-3 border-b">Points</th>
-                                    <th class="p-3 border-b">Status</th>
-                                    <th class="p-3 border-b">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="admin-campers-list"></tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- Settings & Threshold -->
-                <div class="bg-white p-6 rounded-lg shadow-sm border">
-                    <h2 class="text-xl font-bold mb-4">Configuration</h2>
-                    <label class="block text-sm font-bold text-gray-700 mb-1">Weekly Event Threshold</label>
-                    <div class="flex gap-2 mb-6">
-                        <input type="number" id="threshold-input" class="border p-2 rounded w-full">
-                        <button onclick="saveThreshold()" class="bg-blue-600 text-white px-4 py-2 rounded">Save</button>
-                    </div>
-
-                    <h3 class="font-bold text-gray-700 mb-2">Questions & Values</h3>
-                    <div id="admin-questions-list" class="space-y-3 mb-4"></div>
-                    <button class="text-blue-600 text-sm font-bold" onclick="alert('In this version, questions are edited directly in the code or state object to prevent accidental deletion.')">Edit Questions</button>
-                </div>
-            </div>
-        </div>
+    <!-- PANEL: REPORT -->
+    <div id="panel-report" class="admin-panel">
+      <div class="admin-card">
+        <h3 id="report-threshold-label">Weekly Event Report</h3>
+        <div class="report-split" id="report-split"></div>
+      </div>
     </div>
 
-    <!-- POPUP OVERLAY -->
-    <div id="success-popup" class="hidden fixed inset-0 bg-blue-900 bg-opacity-90 flex items-center justify-center z-50">
-        <div class="text-center fade-in">
-            <div class="text-white text-6xl mb-4">✅</div>
-            <h2 class="text-4xl font-black text-white tracking-wide">Submitted!</h2>
-            <p class="text-blue-200 mt-2 text-xl" id="points-earned-msg"></p>
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════
+   DATA LAYER  –  localStorage persistence
+═══════════════════════════════════════════════════ */
+const DB = {
+  KEY: 'ms_app_v1',
+  defaults() {
+    return {
+      campers: [],          // [{id, firstName, lastName, nfcId, pointsOverride, days:{}}]
+      questions: [
+        { text: 'Did you daven Shacharis with a minyan?',      pts: 3 },
+        { text: 'Did you learn your daily Chitas?',            pts: 3 },
+        { text: 'Did you do something nice for a friend?',     pts: 2 },
+        { text: 'Did you learn the Inyan HaYom?',              pts: 4 },
+        { text: 'Did you put on Tefillin properly today?',     pts: 4 },
+        { text: 'Did you make a hachlata (resolution) today?', pts: 4 },
+      ],
+      threshold: 20,
+      nextId: 1,
+    };
+  },
+  load() {
+    try {
+      const raw = localStorage.getItem(this.KEY);
+      if (!raw) return this.defaults();
+      const d = JSON.parse(raw);
+      // backfill missing fields
+      if (!d.questions) d.questions = this.defaults().questions;
+      if (d.threshold == null) d.threshold = 20;
+      if (!d.nextId) d.nextId = d.campers.length + 1;
+      return d;
+    } catch(e) { return this.defaults(); }
+  },
+  save(data) {
+    localStorage.setItem(this.KEY, JSON.stringify(data));
+  }
+};
+
+let db = DB.load();
+let currentCamper = null;    // logged-in camper id
+let editingCamperId = null;  // admin editing
+let editingDayKey = null;
+
+/* ═══════════════════════════════════════════════════
+   UTILS
+═══════════════════════════════════════════════════ */
+function todayKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function formatDateLabel(key) {
+  if (!key) return '';
+  const [y,m,d] = key.split('-').map(Number);
+  return new Date(y,m-1,d).toLocaleDateString('en-US', {weekday:'long', month:'long', day:'numeric'});
+}
+function camperById(id) {
+  return db.campers.find(c => c.id === id);
+}
+function calcDayPoints(camper, dayKey) {
+  const day = camper.days?.[dayKey];
+  if (!day) return 0;
+  if (day.override != null) return day.override;
+  let pts = 0;
+  (day.answers || []).forEach((ans, i) => {
+    if (ans === true && db.questions[i]) pts += db.questions[i].pts;
+  });
+  return pts;
+}
+function calcTotalPoints(camper) {
+  if (camper.pointsOverride != null) return camper.pointsOverride;
+  let total = 0;
+  Object.keys(camper.days || {}).forEach(dk => {
+    total += calcDayPoints(camper, dk);
+  });
+  return total;
+}
+function showEl(id, show) {
+  const el = document.getElementById(id);
+  if (el) el.style.display = show ? '' : 'none';
+}
+function showPage(pageId) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById(pageId)?.classList.add('active');
+}
+function flashMsg(id, text, type='success') {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = `<div class="alert alert-${type}">${text}</div>`;
+  setTimeout(() => el.innerHTML = '', 3000);
+}
+
+/* ═══════════════════════════════════════════════════
+   NFC / LOGIN
+═══════════════════════════════════════════════════ */
+let nfcBuffer = '';
+let nfcTimer = null;
+const nfcInput = document.getElementById('nfc-input');
+
+// Keep NFC input focused on login page
+document.addEventListener('click', () => {
+  if (document.getElementById('page-login').classList.contains('active')) {
+    nfcInput.focus();
+  }
+});
+nfcInput.focus();
+
+nfcInput.addEventListener('keydown', (e) => {
+  if (!document.getElementById('page-login').classList.contains('active')) return;
+  clearTimeout(nfcTimer);
+  if (e.key === 'Enter') {
+    const id = nfcBuffer.trim();
+    nfcBuffer = '';
+    if (id) handleNfcScan(id);
+    e.preventDefault();
+    return;
+  }
+  if (e.key.length === 1) nfcBuffer += e.key;
+  // NFC scanners typically complete in <100ms; treat as scan if chars arrive quickly
+  nfcTimer = setTimeout(() => {
+    const id = nfcBuffer.trim();
+    nfcBuffer = '';
+    if (id.length > 2) handleNfcScan(id);
+  }, 200);
+});
+
+function handleNfcScan(nfcId) {
+  const camper = db.campers.find(c => c.nfcId && c.nfcId.toLowerCase() === nfcId.toLowerCase());
+  const statusEl = document.getElementById('login-status');
+  if (!camper) {
+    statusEl.textContent = `Card not recognised (ID: ${nfcId})`;
+    statusEl.className = 'login-status error';
+    setTimeout(() => {
+      statusEl.textContent = 'Ready for card scan…';
+      statusEl.className = 'login-status';
+    }, 2500);
+    return;
+  }
+  statusEl.textContent = `Welcome, ${camper.firstName}!`;
+  statusEl.className = 'login-status success';
+  currentCamper = camper.id;
+  setTimeout(() => loadDashboard(), 400);
+}
+
+function goLogin() {
+  currentCamper = null;
+  showPage('page-login');
+  const statusEl = document.getElementById('login-status');
+  statusEl.textContent = 'Ready for card scan…';
+  statusEl.className = 'login-status';
+  nfcBuffer = '';
+  setTimeout(() => nfcInput.focus(), 100);
+}
+function goAdmin() {
+  showPage('page-admin');
+  renderCampersTable();
+  renderQuestionsEditor();
+  renderReport();
+  loadThreshold();
+}
+
+/* ═══════════════════════════════════════════════════
+   DASHBOARD
+═══════════════════════════════════════════════════ */
+function loadDashboard() {
+  const camper = camperById(currentCamper);
+  if (!camper) { goLogin(); return; }
+
+  showPage('page-dashboard');
+  document.getElementById('dash-name').textContent = `${camper.firstName} ${camper.lastName}`;
+  document.getElementById('dash-score').textContent = calcTotalPoints(camper);
+  document.getElementById('dash-date-label').textContent = formatDateLabel(todayKey());
+
+  const dk = todayKey();
+  const todayData = camper.days?.[dk];
+  const alreadySubmitted = todayData?.submitted;
+
+  showEl('already-submitted-banner', alreadySubmitted);
+  document.getElementById('submit-btn').disabled = alreadySubmitted;
+  document.getElementById('submit-btn').style.opacity = alreadySubmitted ? 0.4 : 1;
+
+  // Build checklist
+  const container = document.getElementById('checklist-items');
+  container.innerHTML = '';
+  db.questions.forEach((q, i) => {
+    const saved = todayData?.answers?.[i];
+    const disabled = alreadySubmitted;
+    const item = document.createElement('div');
+    item.className = 'checklist-item';
+    item.innerHTML = `
+      <div class="checklist-num">${i+1}</div>
+      <div class="checklist-q">${q.text}</div>
+      <div class="checklist-pts">+${q.pts} pts</div>
+      <div class="toggle-wrap">
+        <button class="toggle-btn yes ${saved===true?'active':''}" 
+          data-idx="${i}" data-val="yes"
+          onclick="${disabled?'':'toggleAnswer('+i+',true)'}" 
+          ${disabled?'disabled':''}>Yes</button>
+        <button class="toggle-btn no ${saved===false?'active':''}"
+          data-idx="${i}" data-val="no"
+          onclick="${disabled?'':'toggleAnswer('+i+',false)'}"
+          ${disabled?'disabled':''}>No</button>
+      </div>
+    `;
+    container.appendChild(item);
+  });
+}
+
+// Temporary in-session answers (not yet saved)
+let sessionAnswers = {};
+
+function toggleAnswer(idx, val) {
+  sessionAnswers[idx] = val;
+  const items = document.querySelectorAll('.checklist-item');
+  const item = items[idx];
+  if (!item) return;
+  item.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+  const target = item.querySelector(`.toggle-btn.${val?'yes':'no'}`);
+  if (target) target.classList.add('active');
+}
+
+function submitDuch() {
+  const camper = camperById(currentCamper);
+  if (!camper) return;
+  const dk = todayKey();
+  if (!camper.days) camper.days = {};
+  const answers = db.questions.map((_, i) => sessionAnswers[i] === true ? true : false);
+  camper.days[dk] = { answers, submitted: true };
+  if (camper.pointsOverride != null) delete camper.pointsOverride; // recalc
+  db.save(db);
+
+  // Calculate pts earned today
+  let todayPts = 0;
+  answers.forEach((a, i) => { if (a && db.questions[i]) todayPts += db.questions[i].pts; });
+  const total = calcTotalPoints(camper);
+
+  const modal = document.getElementById('submit-modal');
+  document.getElementById('modal-pts-msg').textContent = `+${todayPts} pts today · Total: ${total} pts`;
+  modal.classList.add('active');
+  sessionAnswers = {};
+
+  setTimeout(() => {
+    modal.classList.remove('active');
+    goLogin();
+  }, 2200);
+}
+
+/* ═══════════════════════════════════════════════════
+   ADMIN: CAMPERS
+═══════════════════════════════════════════════════ */
+function renderCampersTable() {
+  const tbody = document.getElementById('campers-table-body');
+  if (!tbody) return;
+  if (db.campers.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4"><div class="empty-state">No campers yet. Add one above.</div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = db.campers.map(c => `
+    <tr>
+      <td><strong>${c.firstName} ${c.lastName}</strong></td>
+      <td>${c.nfcId ? `<span class="nfc-id-display">${c.nfcId}</span>` : '<span style="color:#aaa;font-size:12px;">Not assigned</span>'}</td>
+      <td><span class="badge badge-gold">${calcTotalPoints(c)} pts</span></td>
+      <td style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="btn btn-ghost btn-sm" onclick="openCamperProfile(${c.id})">Edit</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteCamper(${c.id})">Delete</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function addCamper() {
+  const first = document.getElementById('add-first').value.trim();
+  const last  = document.getElementById('add-last').value.trim();
+  const nfc   = document.getElementById('add-nfc').value.trim();
+  if (!first || !last) { flashMsg('add-camper-msg','Please enter first and last name.','error'); return; }
+  if (nfc && db.campers.find(c => c.nfcId && c.nfcId.toLowerCase() === nfc.toLowerCase())) {
+    flashMsg('add-camper-msg','That NFC ID is already assigned to another camper.','error'); return;
+  }
+  db.campers.push({ id: db.nextId++, firstName: first, lastName: last, nfcId: nfc||'', days: {} });
+  DB.save(db);
+  document.getElementById('add-first').value = '';
+  document.getElementById('add-last').value = '';
+  document.getElementById('add-nfc').value = '';
+  flashMsg('add-camper-msg', `${first} ${last} added!`, 'success');
+  renderCampersTable();
+}
+
+function deleteCamper(id) {
+  const c = camperById(id);
+  if (!c) return;
+  if (!confirm(`Delete ${c.firstName} ${c.lastName}? This cannot be undone.`)) return;
+  db.campers = db.campers.filter(x => x.id !== id);
+  DB.save(db);
+  renderCampersTable();
+}
+
+function openCamperProfile(id) {
+  editingCamperId = id;
+  const c = camperById(id);
+  if (!c) return;
+  document.getElementById('profile-title').textContent = `${c.firstName} ${c.lastName}`;
+  document.getElementById('profile-first').value = c.firstName;
+  document.getElementById('profile-last').value  = c.lastName;
+  document.getElementById('profile-nfc').value   = c.nfcId || '';
+  document.getElementById('total-pts-override').value = calcTotalPoints(c);
+  showEl('admin-campers-list', false);
+  showEl('admin-camper-profile', true);
+  renderDaysGrid(c);
+  closeDayEditor();
+}
+
+function closeCamperProfile() {
+  editingCamperId = null;
+  showEl('admin-campers-list', true);
+  showEl('admin-camper-profile', false);
+  renderCampersTable();
+}
+
+function saveProfile() {
+  const c = camperById(editingCamperId);
+  if (!c) return;
+  const nfc = document.getElementById('profile-nfc').value.trim();
+  if (nfc && db.campers.find(x => x.id !== c.id && x.nfcId && x.nfcId.toLowerCase() === nfc.toLowerCase())) {
+    flashMsg('profile-save-msg','That NFC ID is assigned to another camper.','error'); return;
+  }
+  c.firstName = document.getElementById('profile-first').value.trim() || c.firstName;
+  c.lastName  = document.getElementById('profile-last').value.trim()  || c.lastName;
+  c.nfcId     = nfc;
+  DB.save(db);
+  document.getElementById('profile-title').textContent = `${c.firstName} ${c.lastName}`;
+  flashMsg('profile-save-msg','Saved!','success');
+}
+
+function saveTotalOverride() {
+  const c = camperById(editingCamperId);
+  if (!c) return;
+  const val = parseInt(document.getElementById('total-pts-override').value);
+  if (isNaN(val) || val < 0) { flashMsg('total-override-msg','Enter a valid point value.','error'); return; }
+  c.pointsOverride = val;
+  DB.save(db);
+  flashMsg('total-override-msg', `Total points set to ${val}.`, 'success');
+}
+
+function renderDaysGrid(c) {
+  const grid = document.getElementById('profile-days-grid');
+  if (!grid) return;
+  const days = Object.keys(c.days || {}).sort().reverse();
+  if (days.length === 0) {
+    grid.innerHTML = '<div class="empty-state" style="padding:16px;">No submissions yet.</div>';
+    return;
+  }
+  grid.innerHTML = days.map(dk => {
+    const d = c.days[dk];
+    const pts = calcDayPoints(c, dk);
+    return `
+      <div class="day-cell" onclick="openDayEditor('${dk}')">
+        <div class="day-cell-date">${formatDateLabel(dk)}</div>
+        <div class="day-cell-pts">${pts} pts</div>
+        <div class="day-cell-sub">${d.submitted ? 'Submitted' : 'Partial'} · click to edit</div>
+      </div>`;
+  }).join('');
+}
+
+function openDayEditor(dk) {
+  editingDayKey = dk;
+  const c = camperById(editingCamperId);
+  if (!c) return;
+  document.getElementById('day-editor-title').textContent = `Edit: ${formatDateLabel(dk)}`;
+  const day = c.days?.[dk] || {};
+  document.getElementById('day-pts-override').value = day.override != null ? day.override : '';
+  const grid = document.getElementById('day-ans-grid');
+  grid.innerHTML = db.questions.map((q, i) => {
+    const ans = day.answers?.[i];
+    return `
+      <div class="ans-row">
+        <div class="ans-q"><strong>${i+1}.</strong> ${q.text} <small style="color:#888;">(+${q.pts})</small></div>
+        <div class="ans-toggle">
+          <button class="ans-btn yes ${ans===true?'active':''}" onclick="toggleAnsEdit(${i},true,this)">Yes</button>
+          <button class="ans-btn no  ${ans===false?'active':''}" onclick="toggleAnsEdit(${i},false,this)">No</button>
         </div>
+      </div>`;
+  }).join('');
+  showEl('profile-day-editor', true);
+  document.getElementById('profile-day-editor').scrollIntoView({behavior:'smooth'});
+}
+
+function toggleAnsEdit(idx, val, btn) {
+  const row = btn.closest('.ans-toggle');
+  row.querySelectorAll('.ans-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+function saveDayEdit() {
+  const c = camperById(editingCamperId);
+  if (!c || !editingDayKey) return;
+  if (!c.days) c.days = {};
+  if (!c.days[editingDayKey]) c.days[editingDayKey] = { answers: [], submitted: true };
+  const day = c.days[editingDayKey];
+  // Read answers
+  const rows = document.querySelectorAll('#day-ans-grid .ans-row');
+  day.answers = Array.from(rows).map(row => {
+    const yes = row.querySelector('.ans-btn.yes.active');
+    const no  = row.querySelector('.ans-btn.no.active');
+    return yes ? true : no ? false : null;
+  });
+  // Override
+  const ov = document.getElementById('day-pts-override').value;
+  day.override = (ov !== '' && !isNaN(parseInt(ov))) ? parseInt(ov) : undefined;
+  if (day.override == null) delete day.override;
+  DB.save(db);
+  flashMsg('day-edit-msg','Day saved!','success');
+  renderDaysGrid(c);
+  // Update total override display
+  document.getElementById('total-pts-override').value = calcTotalPoints(c);
+}
+
+function closeDayEditor() {
+  editingDayKey = null;
+  showEl('profile-day-editor', false);
+}
+
+/* ═══════════════════════════════════════════════════
+   ADMIN: QUESTIONS
+═══════════════════════════════════════════════════ */
+function renderQuestionsEditor() {
+  const el = document.getElementById('questions-editor');
+  if (!el) return;
+  el.innerHTML = db.questions.map((q, i) => `
+    <div class="question-row">
+      <div class="q-num">${i+1}</div>
+      <input type="text" class="q-text" data-idx="${i}" value="${q.text.replace(/"/g,'&quot;')}" placeholder="Question ${i+1}">
+      <input type="number" class="q-pts" data-idx="${i}" value="${q.pts}" min="0" title="Points for Yes">
+      <span style="font-size:12px;color:#888;">pts</span>
     </div>
+  `).join('');
+}
 
-    <script>
-        // --- 1. STATE MANAGEMENT (localStorage) ---
-        const defaultState = {
-            campers: [
-                { id: "12345", name: "Mendy Cohen", points: 15, history: {} } // history matches YYYY-MM-DD
-            ],
-            config: {
-                threshold: 20,
-                questions: [
-                    { id: "q1", text: "Learned Chitas", value: 5 },
-                    { id: "q2", text: "Davened Shacharis with Minyan", value: 5 },
-                    { id: "q3", text: "Said Bentching from a Siddur", value: 3 },
-                    { id: "q4", text: "Kept room clean", value: 2 },
-                    { id: "q5", text: "Helped another camper", value: 5 },
-                    { id: "q6", text: "Learned Tanya outside", value: 5 }
-                ]
-            }
-        };
+function saveQuestions() {
+  const rows = document.querySelectorAll('#questions-editor .question-row');
+  rows.forEach((row, i) => {
+    const text = row.querySelector('.q-text').value.trim();
+    const pts  = parseInt(row.querySelector('.q-pts').value) || 0;
+    if (db.questions[i]) { db.questions[i].text = text; db.questions[i].pts = pts; }
+  });
+  DB.save(db);
+  flashMsg('questions-msg','Questions saved!','success');
+}
 
-        let db = JSON.parse(localStorage.getItem('mivtzah_db')) || defaultState;
-        let currentCamper = null;
-        const today = new Date().toISOString().split('T')[0];
+function loadThreshold() {
+  const el = document.getElementById('threshold-input');
+  if (el) el.value = db.threshold;
+}
 
-        function saveData() { localStorage.setItem('mivtzah_db', JSON.stringify(db)); }
+function saveThreshold() {
+  const val = parseInt(document.getElementById('threshold-input').value);
+  if (isNaN(val) || val < 0) { flashMsg('threshold-msg','Enter a valid number.','error'); return; }
+  db.threshold = val;
+  DB.save(db);
+  flashMsg('threshold-msg', `Threshold set to ${val} points.`,'success');
+  renderReport();
+}
 
-        // --- 2. ROUTING & UI VIEWS ---
-        function showView(viewId) {
-            document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
-            document.getElementById(viewId).classList.remove('hidden');
-            
-            if(viewId === 'view-login') {
-                currentCamper = null; // Clear state
-                const nfcInput = document.getElementById('nfc-input');
-                nfcInput.value = '';
-                nfcInput.focus();
-            } else if (viewId === 'view-admin') {
-                renderAdmin();
-            }
+/* ═══════════════════════════════════════════════════
+   ADMIN: REPORT
+═══════════════════════════════════════════════════ */
+function renderReport() {
+  const el = document.getElementById('report-split');
+  const label = document.getElementById('report-threshold-label');
+  if (!el) return;
+  const threshold = db.threshold;
+  if (label) label.textContent = `Weekly Event Report — Threshold: ${threshold} pts`;
+
+  const eligible   = db.campers.filter(c => calcTotalPoints(c) >= threshold).sort((a,b) => calcTotalPoints(b) - calcTotalPoints(a));
+  const ineligible = db.campers.filter(c => calcTotalPoints(c) <  threshold).sort((a,b) => calcTotalPoints(b) - calcTotalPoints(a));
+
+  const renderList = (title, campers, cls) => `
+    <div class="report-list">
+      <div class="report-list-header ${cls}">
+        <span>${cls === 'eligible' ? '✅' : '⛔'}</span>
+        <span>${title} (${campers.length})</span>
+      </div>
+      <div class="report-list-body">
+        ${campers.length === 0 ? '<div class="empty-state">None</div>' :
+          campers.map(c => `
+            <div class="report-item">
+              <span>${c.firstName} ${c.lastName}</span>
+              <span class="report-item-pts">${calcTotalPoints(c)} pts</span>
+            </div>`).join('')
         }
+      </div>
+    </div>`;
 
-        window.addEventListener('hashchange', () => {
-            if(window.location.hash === '#admin') showView('view-admin');
-            else showView('view-login');
-        });
+  el.innerHTML =
+    renderList('Eligible for Event', eligible,   'eligible') +
+    renderList('Not Eligible',        ineligible, 'ineligible');
+}
 
-        // --- 3. NFC LOGIN LOGIC ---
-        const nfcInput = document.getElementById('nfc-input');
-        
-        // Keep input constantly focused for the scanner
-        document.getElementById('view-login').addEventListener('click', () => nfcInput.focus());
-        nfcInput.addEventListener('blur', () => {
-            if(window.location.hash !== '#admin' && !currentCamper) nfcInput.focus();
-        });
+/* ═══════════════════════════════════════════════════
+   ADMIN: NAV
+═══════════════════════════════════════════════════ */
+function switchPanel(panelId, tab) {
+  document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+  tab.classList.add('active');
+  document.querySelectorAll('.admin-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-' + panelId)?.classList.add('active');
+  if (panelId === 'report') renderReport();
+  if (panelId === 'questions') { renderQuestionsEditor(); loadThreshold(); }
+  if (panelId === 'campers') renderCampersTable();
+}
 
-        nfcInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                const scanId = nfcInput.value.trim();
-                const camper = db.campers.find(c => c.id === scanId);
-                
-                if (camper) {
-                    currentCamper = camper;
-                    buildCamperDashboard();
-                    showView('view-camper');
-                } else {
-                    alert('Card not recognized. See an admin.');
-                    nfcInput.value = '';
-                }
-            }
-        });
+/* ═══════════════════════════════════════════════════
+   NFC INPUT FOCUS — keep the login input focused
+   for tablet use even when tapping display elements
+═══════════════════════════════════════════════════ */
+document.addEventListener('focusout', () => {
+  if (document.getElementById('page-login').classList.contains('active')) {
+    setTimeout(() => nfcInput.focus(), 50);
+  }
+});
 
-        // --- 4. CAMPER DASHBOARD LOGIC ---
-        function buildCamperDashboard() {
-            document.getElementById('camper-name-display').innerText = `Welcome, ${currentCamper.name}!`;
-            document.getElementById('camper-points-display').innerText = currentCamper.points;
-            
-            const form = document.getElementById('duch-form');
-            form.innerHTML = '';
+// Allow admins to manually type an NFC ID for testing
+// On admin page, add-nfc and profile-nfc fields capture the scan
+document.getElementById('add-nfc').addEventListener('focus', () => { /* let it be */ });
 
-            // Check if already submitted today
-            if(currentCamper.history[today]) {
-                form.innerHTML = `<div class="text-center p-8 text-gray-500"><p class="text-xl font-bold">You already submitted today's Duch!</p><p>Come back tomorrow.</p></div>`;
-                document.querySelector('#view-camper button').style.display = 'none';
-                setTimeout(() => window.location.hash = '', 3000); // Auto kick out after 3s
-                return;
-            }
+// On profile page, wire NFC scan to the focused NFC field
+nfcInput.addEventListener('input', () => { nfcInput.value = ''; });
 
-            document.querySelector('#view-camper button').style.display = 'block';
-
-            db.config.questions.forEach((q, idx) => {
-                const row = document.createElement('div');
-                row.className = 'flex items-center justify-between p-3 bg-gray-50 rounded border border-gray-100';
-                row.innerHTML = `
-                    <label class="text-lg font-medium text-gray-700 flex-1" for="toggle-${idx}">${q.text} <span class="text-sm text-gray-400 ml-2">(+${q.value} pts)</span></label>
-                    <input type="checkbox" id="toggle-${idx}" data-val="${q.value}" class="w-8 h-8 text-blue-600 rounded focus:ring-blue-500">
-                `;
-                form.appendChild(row);
-            });
-        }
-
-        function submitDuch() {
-            if(!currentCamper) return;
-            
-            const checkboxes = document.querySelectorAll('#duch-form input[type="checkbox"]');
-            let pointsEarned = 0;
-            let answers = [];
-
-            checkboxes.forEach(cb => {
-                answers.push(cb.checked);
-                if(cb.checked) pointsEarned += parseInt(cb.getAttribute('data-val'));
-            });
-
-            // Update State
-            currentCamper.points += pointsEarned;
-            currentCamper.history[today] = answers;
-            saveData();
-
-            // Show Success UI
-            document.getElementById('points-earned-msg').innerText = `You earned ${pointsEarned} points today!`;
-            const popup = document.getElementById('success-popup');
-            popup.classList.remove('hidden');
-
-            setTimeout(() => {
-                popup.classList.add('hidden');
-                showView('view-login');
-            }, 2500);
-        }
-
-        // --- 5. ADMIN LOGIC ---
-        function renderAdmin() {
-            document.getElementById('threshold-input').value = db.config.threshold;
-            
-            const tbody = document.getElementById('admin-campers-list');
-            tbody.innerHTML = '';
-            
-            // Sort by points descending
-            const sortedCampers = [...db.campers].sort((a,b) => b.points - a.points);
-
-            sortedCampers.forEach(c => {
-                const isEligible = c.points >= db.config.threshold;
-                const statusHtml = isEligible 
-                    ? `<span class="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-bold">Eligible</span>` 
-                    : `<span class="bg-red-100 text-red-800 px-2 py-1 rounded text-xs font-bold">Short ${db.config.threshold - c.points} pts</span>`;
-
-                tbody.innerHTML += `
-                    <tr class="border-b hover:bg-gray-50">
-                        <td class="p-3 font-medium">${c.name}</td>
-                        <td class="p-3 text-sm text-gray-500">${c.id}</td>
-                        <td class="p-3 font-bold">${c.points}</td>
-                        <td class="p-3">${statusHtml}</td>
-                        <td class="p-3">
-                            <button onclick="overridePoints('${c.id}')" class="text-blue-600 text-sm mr-2 hover:underline">Edit Points</button>
-                            <button onclick="deleteCamper('${c.id}')" class="text-red-600 text-sm hover:underline">Remove</button>
-                        </td>
-                    </tr>
-                `;
-            });
-
-            // Render Questions List
-            const qList = document.getElementById('admin-questions-list');
-            qList.innerHTML = db.config.questions.map(q => 
-                `<div class="flex justify-between text-sm border-b pb-1"><span>${q.text}</span> <span class="font-bold text-gray-500">${q.value} pts</span></div>`
-            ).join('');
-        }
-
-        function addCamper() {
-            const name = document.getElementById('new-camper-name').value.trim();
-            const id = document.getElementById('new-camper-nfc').value.trim();
-            if(!name || !id) return alert("Need name and NFC ID");
-            if(db.campers.find(c => c.id === id)) return alert("NFC ID already in use!");
-            
-            db.campers.push({ id, name, points: 0, history: {} });
-            saveData();
-            document.getElementById('new-camper-name').value = '';
-            document.getElementById('new-camper-nfc').value = '';
-            renderAdmin();
-        }
-
-        function overridePoints(id) {
-            const camper = db.campers.find(c => c.id === id);
-            const newPts = prompt(`Enter new total points for ${camper.name}:`, camper.points);
-            if(newPts !== null && !isNaN(newPts)) {
-                camper.points = parseInt(newPts);
-                saveData();
-                renderAdmin();
-            }
-        }
-
-        function deleteCamper(id) {
-            if(confirm("Are you sure you want to delete this camper entirely?")) {
-                db.campers = db.campers.filter(c => c.id !== id);
-                saveData();
-                renderAdmin();
-            }
-        }
-
-        function saveThreshold() {
-            db.config.threshold = parseInt(document.getElementById('threshold-input').value);
-            saveData();
-            renderAdmin();
-        }
-
-        // Init
-        if(window.location.hash === '#admin') showView('view-admin');
-        else showView('view-login');
-
-    </script>
+</script>
 </body>
 </html>
