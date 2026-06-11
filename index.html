@@ -2,1504 +2,1752 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0A1628">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Mivtzah">
+<link rel="manifest" href="./manifest.json">
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='32' fill='%230A1628'/><text x='96' y='130' font-size='100' text-anchor='middle' fill='%23C9A84C'>מ</text></svg>">
 <title>Mivtzah Sventzich</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@300;400;500;600&family=Cormorant+Garamond:wght@400;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap" rel="stylesheet">
+
+<!-- ─── SUPABASE CONFIG ─── Replace these values with your project ─── -->
+<script>
+  const SUPABASE_URL = 'https://mgiwefsbvixlnlokplpj.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_SobfsllNB0WE0zvBvThyMA_qHPsi0ob';
+  // Admin password is managed via Supabase: set a row in app_settings
+  // with key='admin_password'. Default fallback below (change it!):
+  const ADMIN_PASSWORD_FALLBACK = 'YKP2024';
+</script>
+
 <style>
-  /* ── RESET & BASE ── */
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  :root {
-    --navy:       #0A1628;
-    --navy-mid:   #1E3A5F;
-    --navy-light: #2A4A7F;
-    --gold:       #C9A84C;
-    --gold-light: #E8C96A;
-    --gold-dim:   #9A7A30;
-    --parchment:  #F5F0E8;
-    --warm-white: #FDFAF5;
-    --border:     #E0D8C8;
-    --text-dark:  #1A1408;
-    --text-mid:   #4A4030;
-    --text-soft:  #8A7A60;
-    --green:      #2E7D52;
-    --red:        #C0392B;
-    --admin-bg:   #F4F6F8;
-    --admin-border: #DDE2EA;
-    --admin-blue: #2563EB;
-  }
-  html, body { height: 100%; font-family: 'Inter', sans-serif; }
-  body { background: var(--navy); color: var(--parchment); }
+/* ══════════════════════════════════════
+   CSS RESET + TOKENS
+══════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+:root {
+  --navy:        #0A1628;
+  --navy-mid:    #142238;
+  --navy-card:   #1A2E48;
+  --gold:        #C9A84C;
+  --gold-bright: #E8C96A;
+  --gold-muted:  #9A7A30;
+  --gold-tint:   rgba(201,168,76,0.12);
+  --surface:     #F6F7F9;
+  --surface-2:   #FFFFFF;
+  --border:      #E4E7ED;
+  --border-dark: #CBD2DC;
+  --text-1:      #0F172A;
+  --text-2:      #475569;
+  --text-3:      #94A3B8;
+  --green:       #16A34A;
+  --green-bg:    #DCFCE7;
+  --red:         #DC2626;
+  --red-bg:      #FEE2E2;
+  --blue:        #2563EB;
+  --blue-bg:     #EFF6FF;
+  --amber:       #D97706;
+  --amber-bg:    #FEF3C7;
+  --radius-sm:   8px;
+  --radius-md:   12px;
+  --radius-lg:   16px;
+  --radius-xl:   20px;
+  --shadow-sm:   0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md:   0 4px 16px rgba(0,0,0,0.10), 0 2px 4px rgba(0,0,0,0.06);
+  --shadow-lg:   0 12px 40px rgba(0,0,0,0.15), 0 4px 8px rgba(0,0,0,0.08);
+}
+html { height: 100%; overflow-x: hidden; }
+body {
+  font-family: 'DM Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  min-height: 100%;
+  background: var(--navy);
+  color: #fff;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
 
-  /* ── PAGES ── */
-  .page { display: none; min-height: 100vh; }
-  .page.active { display: flex; }
+/* ── PAGES ── */
+.page { display: none; min-height: 100dvh; min-height: 100vh; width: 100%; overflow-x: hidden; }
+.page.active { display: flex; flex-direction: column; }
 
-  /* ═══════════════════════════════════════
-     LOGIN PAGE
-  ═══════════════════════════════════════ */
-  #page-login {
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    background: var(--navy);
-    position: relative;
-    overflow: hidden;
-  }
-  #page-login::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background:
-      radial-gradient(ellipse 80% 60% at 50% 0%, rgba(201,168,76,0.07) 0%, transparent 70%),
-      radial-gradient(ellipse 60% 40% at 50% 100%, rgba(201,168,76,0.04) 0%, transparent 60%);
-    pointer-events: none;
-  }
-  .login-inner {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0;
-    z-index: 1;
-    padding: 40px 24px;
-    max-width: 460px;
-    width: 100%;
-  }
-  .login-rebbe-frame {
-    position: relative;
-    margin-bottom: 28px;
-  }
-  .login-rebbe-img {
-    width: 200px;
-    height: 250px;
-    object-fit: cover;
-    object-position: top center;
-    border-radius: 4px;
-    display: block;
-    border: 2px solid rgba(201,168,76,0.4);
-  }
-  .login-rebbe-frame::after {
-    content: '';
-    position: absolute;
-    bottom: -12px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 140px;
-    height: 2px;
-    background: linear-gradient(90deg, transparent, var(--gold), transparent);
-  }
-  .login-logo-block {
-    margin-top: 24px;
-    text-align: center;
-    margin-bottom: 36px;
-  }
-  .login-logo-title {
-    font-family: 'Playfair Display', serif;
-    font-size: 15px;
-    font-weight: 600;
-    letter-spacing: 0.22em;
-    text-transform: uppercase;
-    color: var(--gold);
-    line-height: 1.4;
-  }
-  .login-logo-sub {
-    font-size: 12px;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: rgba(201,168,76,0.55);
-    margin-top: 5px;
-  }
-  .login-divider {
-    width: 48px;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, var(--gold-dim), transparent);
-    margin: 14px auto;
-  }
-  .login-program-name {
-    font-family: 'Cormorant Garamond', serif;
-    font-size: 28px;
-    font-weight: 600;
-    color: var(--warm-white);
-    letter-spacing: 0.04em;
-    text-align: center;
-    line-height: 1.2;
-  }
-  .login-scan-area {
-    text-align: center;
-    margin-bottom: 10px;
-  }
-  .login-scan-label {
-    font-size: 12px;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    color: rgba(255,255,255,0.3);
-    margin-bottom: 14px;
-  }
-  .nfc-icon {
-    width: 56px;
-    height: 56px;
-    margin: 0 auto 14px;
-    opacity: 0.4;
-  }
-  .nfc-pulse {
-    animation: pulse-ring 2s ease-out infinite;
-  }
-  @keyframes pulse-ring {
-    0% { opacity: 0.4; }
-    50% { opacity: 0.7; }
-    100% { opacity: 0.4; }
-  }
-  #nfc-input {
-    position: absolute;
-    opacity: 0;
-    pointer-events: none;
-    width: 1px;
-    height: 1px;
-  }
-  .login-status {
-    font-size: 13px;
-    color: rgba(255,255,255,0.35);
-    margin-top: 8px;
-    min-height: 20px;
-    transition: color 0.3s;
-  }
-  .login-status.error { color: #E87070; }
-  .login-status.success { color: var(--gold-light); }
-  .login-admin-link {
-    position: fixed;
-    bottom: 20px;
-    right: 24px;
-    font-size: 10px;
-    color: rgba(255,255,255,0.1);
-    text-decoration: none;
-    letter-spacing: 0.1em;
-    cursor: pointer;
-    transition: color 0.3s;
-    background: none; border: none;
-  }
-  .login-admin-link:hover { color: rgba(255,255,255,0.35); }
+/* ══════════════════════════════════════
+   INSTALL BANNER
+══════════════════════════════════════ */
+#install-banner {
+  display: none;
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  z-index: 9999;
+  background: var(--navy-card);
+  border-top: 1px solid rgba(201,168,76,0.3);
+  padding: 14px 20px;
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
+  box-shadow: 0 -8px 32px rgba(0,0,0,0.4);
+}
+#install-banner.show { display: flex; }
+.install-icon {
+  width: 44px; height: 44px;
+  background: var(--gold-tint);
+  border: 1px solid rgba(201,168,76,0.3);
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  font-size: 22px;
+}
+.install-text { flex: 1; }
+.install-text strong { display: block; font-size: 14px; color: #fff; font-weight: 600; }
+.install-text span   { font-size: 12px; color: var(--text-3); }
+.install-btns { display: flex; gap: 8px; flex-shrink: 0; }
+.btn-install { background: var(--gold); color: var(--navy); border: none; border-radius: var(--radius-sm); padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
+.btn-install-dismiss { background: transparent; color: var(--text-3); border: 1px solid rgba(255,255,255,0.1); border-radius: var(--radius-sm); padding: 9px 12px; font-size: 13px; cursor: pointer; font-family: inherit; }
 
-  /* ═══════════════════════════════════════
-     CAMPER DASHBOARD
-  ═══════════════════════════════════════ */
-  #page-dashboard {
-    flex-direction: column;
-    background: var(--warm-white);
-    color: var(--text-dark);
-    min-height: 100vh;
-  }
-  .dash-header {
-    background: var(--navy);
-    padding: 20px 28px 16px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    position: relative;
-  }
-  .dash-header::after {
-    content: '';
-    position: absolute;
-    bottom: 0; left: 0; right: 0;
-    height: 2px;
-    background: linear-gradient(90deg, transparent, var(--gold), transparent);
-  }
-  .dash-greeting {
-    display: flex;
-    flex-direction: column;
-  }
-  .dash-hello {
-    font-size: 12px;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    color: rgba(255,255,255,0.4);
-  }
-  .dash-name {
-    font-family: 'Playfair Display', serif;
-    font-size: 24px;
-    font-weight: 600;
-    color: var(--warm-white);
-    letter-spacing: 0.02em;
-  }
-  .dash-score-pill {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    background: rgba(201,168,76,0.12);
-    border: 1px solid rgba(201,168,76,0.3);
-    border-radius: 12px;
-    padding: 10px 22px;
-  }
-  .dash-score-label {
-    font-size: 10px;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: rgba(201,168,76,0.7);
-    margin-bottom: 2px;
-  }
-  .dash-score-value {
-    font-family: 'Playfair Display', serif;
-    font-size: 32px;
-    font-weight: 700;
-    color: var(--gold-light);
-    line-height: 1;
-  }
-  .dash-score-pts {
-    font-size: 10px;
-    color: rgba(201,168,76,0.5);
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-  }
-  .dash-body {
-    flex: 1;
-    padding: 28px 24px 100px;
-    max-width: 600px;
-    margin: 0 auto;
-    width: 100%;
-  }
-  .dash-section-label {
-    font-size: 11px;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    color: var(--text-soft);
-    margin-bottom: 16px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-  .dash-section-label::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: var(--border);
-  }
-  .dash-date-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    background: var(--navy);
-    color: var(--gold);
-    border-radius: 20px;
-    padding: 5px 14px;
-    font-size: 12px;
-    font-weight: 500;
-    letter-spacing: 0.06em;
-    margin-bottom: 20px;
-  }
-  .checklist-card {
-    background: white;
-    border-radius: 14px;
-    border: 1px solid var(--border);
-    overflow: hidden;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
-  }
-  .checklist-item {
-    display: flex;
-    align-items: center;
-    padding: 18px 20px;
-    border-bottom: 1px solid var(--border);
-    gap: 16px;
-    transition: background 0.15s;
-  }
-  .checklist-item:last-child { border-bottom: none; }
-  .checklist-item:hover { background: #FAFAF8; }
-  .checklist-num {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-soft);
-    width: 20px;
-    flex-shrink: 0;
-    text-align: center;
-  }
-  .checklist-q {
-    flex: 1;
-    font-size: 15px;
-    font-weight: 400;
-    color: var(--text-dark);
-    line-height: 1.4;
-  }
-  .checklist-pts {
-    font-size: 11px;
-    color: var(--text-soft);
-    margin-right: 4px;
-    white-space: nowrap;
-  }
-  .toggle-wrap {
-    display: flex;
-    border: 1.5px solid var(--border);
-    border-radius: 8px;
-    overflow: hidden;
-    flex-shrink: 0;
-  }
-  .toggle-btn {
-    padding: 7px 14px;
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    border: none;
-    background: white;
-    cursor: pointer;
-    transition: background 0.15s, color 0.15s;
-    color: var(--text-soft);
-  }
-  .toggle-btn.yes.active { background: var(--green); color: white; }
-  .toggle-btn.no.active  { background: var(--red);   color: white; }
-  .toggle-btn:not(.active):hover { background: #F0EDE8; }
-  .dash-footer {
-    position: fixed;
-    bottom: 0; left: 0; right: 0;
-    padding: 14px 24px 20px;
-    background: linear-gradient(to top, var(--warm-white) 70%, transparent);
-    display: flex;
-    justify-content: center;
-    pointer-events: none;
-  }
-  .btn-submit {
-    pointer-events: auto;
-    background: var(--navy);
-    color: var(--gold-light);
-    border: 1.5px solid rgba(201,168,76,0.4);
-    border-radius: 12px;
-    padding: 16px 56px;
-    font-size: 15px;
-    font-weight: 600;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    cursor: pointer;
-    transition: background 0.2s, border-color 0.2s, transform 0.1s;
-    box-shadow: 0 4px 20px rgba(10,22,40,0.3);
-  }
-  .btn-submit:hover { background: var(--navy-mid); border-color: var(--gold); }
-  .btn-submit:active { transform: scale(0.97); }
-  .already-submitted-banner {
-    background: linear-gradient(135deg, #EFF8F3, #E8F5EE);
-    border: 1px solid #A8D5B8;
-    border-radius: 12px;
-    padding: 18px 20px;
-    text-align: center;
-    color: var(--green);
-    font-weight: 600;
-    font-size: 15px;
-    margin-bottom: 20px;
-  }
+/* ══════════════════════════════════════
+   LOGIN PAGE
+══════════════════════════════════════ */
+#page-login {
+  align-items: center;
+  justify-content: center;
+  background: var(--navy);
+  position: relative;
+  overflow: hidden;
+  padding: 24px 20px 80px;
+}
+#page-login::before {
+  content: '';
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(ellipse 100% 50% at 50% -10%, rgba(201,168,76,0.09) 0%, transparent 70%),
+    radial-gradient(ellipse 80% 40% at 80% 80%, rgba(201,168,76,0.04) 0%, transparent 60%);
+  pointer-events: none;
+}
+.login-inner {
+  width: 100%; max-width: 400px;
+  display: flex; flex-direction: column; align-items: center;
+  z-index: 1; gap: 0;
+}
+.login-rebbe-frame {
+  position: relative;
+  margin-bottom: 24px;
+}
+.login-rebbe-img {
+  width: 160px; height: 200px;
+  object-fit: cover; object-position: top center;
+  border-radius: var(--radius-md);
+  display: block;
+  border: 2px solid rgba(201,168,76,0.35);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+.login-rebbe-frame::after {
+  content: '';
+  position: absolute; bottom: -10px; left: 50%; transform: translateX(-50%);
+  width: 120px; height: 1.5px;
+  background: linear-gradient(90deg, transparent, var(--gold), transparent);
+}
+.login-logo-block {
+  margin-top: 20px; margin-bottom: 28px; text-align: center;
+}
+.login-ykp {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.22em;
+  text-transform: uppercase; color: var(--gold); opacity: 0.85;
+}
+.login-program-he {
+  font-size: 26px; font-weight: 700; color: #fff;
+  margin: 8px 0 4px; letter-spacing: 0.02em;
+  font-family: 'DM Sans', sans-serif;
+}
+.login-program-en {
+  font-size: 12px; color: rgba(201,168,76,0.5);
+  letter-spacing: 0.16em; text-transform: uppercase;
+}
 
-  /* ── MODAL ── */
-  .modal-overlay {
-    display: none;
-    position: fixed;
-    inset: 0;
-    background: rgba(10,22,40,0.65);
-    z-index: 1000;
-    align-items: center;
-    justify-content: center;
-  }
-  .modal-overlay.active { display: flex; }
-  .modal-box {
-    background: white;
-    border-radius: 20px;
-    padding: 40px 48px;
-    text-align: center;
-    box-shadow: 0 24px 80px rgba(0,0,0,0.3);
-    animation: modal-in 0.3s cubic-bezier(0.34,1.56,0.64,1);
-  }
-  @keyframes modal-in {
-    from { opacity: 0; transform: scale(0.85) translateY(16px); }
-    to   { opacity: 1; transform: scale(1) translateY(0); }
-  }
-  .modal-check {
-    width: 64px; height: 64px;
-    background: var(--green);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin: 0 auto 18px;
-  }
-  .modal-check svg { width: 32px; height: 32px; }
-  .modal-title {
-    font-family: 'Playfair Display', serif;
-    font-size: 26px;
-    font-weight: 600;
-    color: var(--text-dark);
-    margin-bottom: 8px;
-  }
-  .modal-sub { font-size: 14px; color: var(--text-soft); }
+/* ── NFC INPUT FIELD (visible, clean) ── */
+.nfc-field-wrap {
+  width: 100%; position: relative; margin-bottom: 14px;
+}
+.nfc-field-wrap .nfc-icon-left {
+  position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+  color: var(--gold); opacity: 0.7; pointer-events: none;
+  display: flex; align-items: center;
+}
+#nfc-input {
+  width: 100%;
+  background: rgba(255,255,255,0.06);
+  border: 1.5px solid rgba(201,168,76,0.25);
+  border-radius: var(--radius-md);
+  padding: 15px 48px 15px 46px;
+  font-size: 15px; font-weight: 500;
+  color: #fff;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s, background 0.2s;
+  letter-spacing: 0.04em;
+}
+#nfc-input::placeholder { color: rgba(255,255,255,0.25); font-weight: 400; }
+#nfc-input:focus {
+  border-color: rgba(201,168,76,0.6);
+  background: rgba(255,255,255,0.09);
+}
+.nfc-clear-btn {
+  position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; color: rgba(255,255,255,0.3);
+  cursor: pointer; padding: 4px; display: flex; align-items: center;
+  font-size: 18px; line-height: 1;
+}
+.btn-login {
+  width: 100%;
+  background: var(--gold);
+  color: var(--navy);
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 15px;
+  font-size: 15px; font-weight: 700;
+  cursor: pointer; font-family: inherit;
+  letter-spacing: 0.04em;
+  transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
+  box-shadow: 0 4px 16px rgba(201,168,76,0.3);
+}
+.btn-login:hover  { background: var(--gold-bright); }
+.btn-login:active { transform: scale(0.98); }
+.login-status {
+  font-size: 13px; color: rgba(255,255,255,0.35);
+  text-align: center; min-height: 20px; margin-top: 12px;
+  transition: color 0.25s;
+}
+.login-status.error   { color: #F87171; }
+.login-status.success { color: var(--gold-bright); }
+.login-admin-btn {
+  position: fixed; bottom: 20px; right: 20px;
+  font-size: 11px; color: rgba(255,255,255,0.1);
+  background: none; border: none; cursor: pointer;
+  font-family: inherit; letter-spacing: 0.08em;
+  transition: color 0.2s; padding: 8px;
+}
+.login-admin-btn:hover { color: rgba(255,255,255,0.4); }
 
-  /* ═══════════════════════════════════════
-     ADMIN PAGES
-  ═══════════════════════════════════════ */
-  #page-admin {
-    flex-direction: column;
-    background: var(--admin-bg);
-    color: var(--text-dark);
-    min-height: 100vh;
-  }
-  .admin-header {
-    background: var(--navy);
-    color: white;
-    padding: 14px 28px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    border-bottom: 2px solid var(--gold-dim);
-  }
-  .admin-title {
-    font-family: 'Playfair Display', serif;
-    font-size: 20px;
-    color: var(--gold-light);
-    letter-spacing: 0.04em;
-  }
-  .admin-subtitle { font-size: 12px; color: rgba(255,255,255,0.4); margin-top: 2px; }
-  .admin-nav {
-    display: flex;
-    gap: 4px;
-    padding: 0 28px;
-    background: white;
-    border-bottom: 1px solid var(--admin-border);
-    overflow-x: auto;
-  }
-  .admin-tab {
-    padding: 13px 18px;
-    font-size: 13px;
-    font-weight: 500;
-    border: none;
-    background: none;
-    cursor: pointer;
-    color: #666;
-    border-bottom: 2px solid transparent;
-    transition: color 0.2s, border-color 0.2s;
-    white-space: nowrap;
-  }
-  .admin-tab.active { color: var(--admin-blue); border-bottom-color: var(--admin-blue); }
-  .admin-tab:hover:not(.active) { color: var(--text-dark); }
-  .admin-content { flex: 1; padding: 24px 28px; max-width: 1100px; }
-  .admin-panel { display: none; }
-  .admin-panel.active { display: block; }
-  .admin-card {
-    background: white;
-    border-radius: 10px;
-    border: 1px solid var(--admin-border);
-    padding: 20px;
-    margin-bottom: 20px;
-  }
-  .admin-card h3 {
-    font-size: 15px;
-    font-weight: 600;
-    margin-bottom: 14px;
-    color: var(--text-dark);
-    padding-bottom: 10px;
-    border-bottom: 1px solid var(--admin-border);
-  }
-  .form-row {
-    display: flex;
-    gap: 10px;
-    align-items: flex-end;
-    flex-wrap: wrap;
-    margin-bottom: 10px;
-  }
-  .form-group { display: flex; flex-direction: column; gap: 5px; }
-  .form-group label { font-size: 12px; color: #666; font-weight: 500; }
-  .form-group input, .form-group select {
-    padding: 9px 12px;
-    border: 1px solid var(--admin-border);
-    border-radius: 7px;
-    font-size: 14px;
-    font-family: 'Inter', sans-serif;
-    background: white;
-    outline: none;
-    transition: border-color 0.2s;
-  }
-  .form-group input:focus, .form-group select:focus { border-color: var(--admin-blue); }
-  .btn {
-    padding: 9px 18px;
-    border-radius: 7px;
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-    border: 1px solid transparent;
-    transition: background 0.15s, opacity 0.15s;
-    font-family: 'Inter', sans-serif;
-  }
-  .btn-primary { background: var(--admin-blue); color: white; }
-  .btn-primary:hover { background: #1d4ed8; }
-  .btn-danger { background: #EF4444; color: white; }
-  .btn-danger:hover { background: #DC2626; }
-  .btn-ghost { background: white; border-color: var(--admin-border); color: var(--text-dark); }
-  .btn-ghost:hover { background: var(--admin-bg); }
-  .btn-sm { padding: 6px 12px; font-size: 12px; }
-  .btn-success { background: #10B981; color: white; }
-  .btn-success:hover { background: #059669; }
-  table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  th {
-    text-align: left;
-    font-size: 11px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: #888;
-    padding: 10px 12px;
-    border-bottom: 1px solid var(--admin-border);
-    font-weight: 500;
-  }
-  td {
-    padding: 11px 12px;
-    border-bottom: 1px solid #F0F0F0;
-    color: var(--text-dark);
-    vertical-align: middle;
-  }
-  tr:last-child td { border-bottom: none; }
-  tr:hover td { background: #F8F9FB; }
-  .badge {
-    display: inline-block;
-    padding: 3px 10px;
-    border-radius: 20px;
-    font-size: 12px;
-    font-weight: 600;
-  }
-  .badge-green { background: #D1FAE5; color: #065F46; }
-  .badge-red   { background: #FEE2E2; color: #991B1B; }
-  .badge-gold  { background: #FEF3C7; color: #92400E; }
-  .question-row {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-    margin-bottom: 10px;
-  }
-  .question-row input[type="text"] {
-    flex: 1;
-    padding: 9px 12px;
-    border: 1px solid var(--admin-border);
-    border-radius: 7px;
-    font-size: 14px;
-    font-family: 'Inter', sans-serif;
-    outline: none;
-  }
-  .question-row input[type="text"]:focus { border-color: var(--admin-blue); }
-  .question-row input[type="number"] {
-    width: 70px;
-    padding: 9px 12px;
-    border: 1px solid var(--admin-border);
-    border-radius: 7px;
-    font-size: 14px;
-    font-family: 'Inter', sans-serif;
-    outline: none;
-    text-align: center;
-  }
-  .question-row input[type="number"]:focus { border-color: var(--admin-blue); }
-  .q-num {
-    width: 24px;
-    height: 24px;
-    background: var(--navy);
-    color: var(--gold);
-    border-radius: 50%;
-    font-size: 12px;
-    font-weight: 600;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-  .report-split {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
-  }
-  .report-list {
-    background: white;
-    border-radius: 10px;
-    border: 1px solid var(--admin-border);
-    overflow: hidden;
-  }
-  .report-list-header {
-    padding: 14px 18px;
-    font-weight: 600;
-    font-size: 14px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-  .report-list-header.eligible   { background: #D1FAE5; color: #065F46; }
-  .report-list-header.ineligible { background: #FEE2E2; color: #991B1B; }
-  .report-list-body { padding: 8px 0; }
-  .report-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 10px 18px;
-    font-size: 14px;
-    border-bottom: 1px solid #F5F5F5;
-  }
-  .report-item:last-child { border-bottom: none; }
-  .report-item-pts { font-weight: 600; color: var(--admin-blue); }
-  .threshold-row {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    margin-bottom: 16px;
-  }
-  .threshold-row label { font-size: 14px; font-weight: 500; }
-  .threshold-row input {
-    width: 90px;
-    padding: 9px 12px;
-    border: 1px solid var(--admin-border);
-    border-radius: 7px;
-    font-size: 15px;
-    font-family: 'Inter', sans-serif;
-    font-weight: 600;
-    text-align: center;
-    outline: none;
-  }
-  .threshold-row input:focus { border-color: var(--admin-blue); }
-  .admin-back-btn {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 13px;
-    color: var(--admin-blue);
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 0;
-    margin-bottom: 18px;
-  }
-  .admin-back-btn:hover { text-decoration: underline; }
-  .day-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 10px;
-    margin-bottom: 18px;
-  }
-  .day-cell {
-    background: white;
-    border: 1px solid var(--admin-border);
-    border-radius: 8px;
-    padding: 12px;
-    cursor: pointer;
-    transition: border-color 0.2s, box-shadow 0.2s;
-  }
-  .day-cell:hover { border-color: var(--admin-blue); box-shadow: 0 0 0 2px rgba(37,99,235,0.1); }
-  .day-cell-date { font-size: 12px; color: #888; margin-bottom: 4px; }
-  .day-cell-pts  { font-size: 18px; font-weight: 700; color: var(--admin-blue); }
-  .day-cell-sub  { font-size: 11px; color: #888; }
-  .ans-grid { display: flex; flex-direction: column; gap: 10px; }
-  .ans-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px 16px;
-    background: #F8F9FB;
-    border-radius: 8px;
-  }
-  .ans-q { flex: 1; font-size: 14px; }
-  .ans-toggle { display: flex; gap: 6px; }
-  .ans-btn {
-    padding: 6px 16px;
-    border-radius: 6px;
-    border: 1.5px solid var(--admin-border);
-    background: white;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.15s;
-    color: #888;
-  }
-  .ans-btn.yes.active { background: var(--green); border-color: var(--green); color: white; }
-  .ans-btn.no.active  { background: var(--red);   border-color: var(--red);   color: white; }
-  .pts-override-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 14px 16px;
-    background: #FFFBEB;
-    border: 1px solid #FDE68A;
-    border-radius: 8px;
-    margin-top: 8px;
-  }
-  .pts-override-row label { font-size: 14px; font-weight: 500; }
-  .pts-override-row input {
-    width: 90px;
-    padding: 8px 12px;
-    border: 1px solid var(--admin-border);
-    border-radius: 7px;
-    font-size: 15px;
-    font-weight: 700;
-    text-align: center;
-    outline: none;
-  }
-  .alert { padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 12px; }
-  .alert-success { background: #D1FAE5; color: #065F46; border: 1px solid #A7F3D0; }
-  .alert-error   { background: #FEE2E2; color: #991B1B; border: 1px solid #FECACA; }
-  .empty-state { padding: 32px; text-align: center; color: #AAA; font-size: 14px; }
-  .nfc-id-display {
-    font-family: monospace;
-    font-size: 12px;
-    background: #F0F0F0;
-    padding: 2px 8px;
-    border-radius: 4px;
-    color: #666;
-  }
-  .admin-nav-back {
-    font-size: 13px;
-    color: rgba(255,255,255,0.5);
-    cursor: pointer;
-    background: none;
-    border: none;
-    letter-spacing: 0.05em;
-    transition: color 0.2s;
-  }
-  .admin-nav-back:hover { color: var(--gold-light); }
+/* ══════════════════════════════════════
+   CAMPER DASHBOARD
+══════════════════════════════════════ */
+#page-dashboard {
+  background: var(--surface);
+  color: var(--text-1);
+}
+.dash-header {
+  background: var(--navy);
+  padding: 16px 20px 14px;
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1.5px solid rgba(201,168,76,0.2);
+  flex-shrink: 0;
+}
+.dash-greeting { display: flex; flex-direction: column; min-width: 0; }
+.dash-hello { font-size: 11px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.38); }
+.dash-name  { font-size: 22px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+.score-badge {
+  display: flex; flex-direction: column; align-items: center;
+  background: rgba(201,168,76,0.1);
+  border: 1.5px solid rgba(201,168,76,0.25);
+  border-radius: var(--radius-md);
+  padding: 8px 18px; flex-shrink: 0;
+}
+.score-label { font-size: 9px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: rgba(201,168,76,0.65); }
+.score-num   { font-size: 30px; font-weight: 700; color: var(--gold-bright); line-height: 1.1; }
+.score-pts   { font-size: 9px; color: rgba(201,168,76,0.45); letter-spacing: 0.12em; text-transform: uppercase; }
+.dash-body { flex: 1; padding: 20px 16px 100px; overflow-y: auto; }
+.section-eyebrow {
+  font-size: 10px; font-weight: 600; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--text-3);
+  display: flex; align-items: center; gap: 10px; margin-bottom: 14px;
+}
+.section-eyebrow::after { content:''; flex:1; height:1px; background: var(--border); }
+.date-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--navy); color: var(--gold);
+  border-radius: 20px; padding: 5px 14px;
+  font-size: 12px; font-weight: 600; margin-bottom: 16px;
+}
+.checklist-wrap {
+  background: var(--surface-2);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+.checklist-row {
+  display: flex; align-items: center; padding: 16px;
+  border-bottom: 1px solid var(--border); gap: 12px;
+  transition: background 0.12s;
+}
+.checklist-row:last-child { border-bottom: none; }
+.checklist-row:active { background: #F8F9FB; }
+.cl-num {
+  width: 22px; height: 22px;
+  border-radius: 50%; background: var(--navy);
+  color: var(--gold); font-size: 10px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.cl-text { flex: 1; font-size: 14px; font-weight: 400; color: var(--text-1); line-height: 1.35; }
+.cl-pts  { font-size: 11px; color: var(--text-3); white-space: nowrap; flex-shrink: 0; }
+.toggle-group {
+  display: flex; border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm); overflow: hidden; flex-shrink: 0;
+}
+.tgl {
+  padding: 7px 13px; font-size: 12px; font-weight: 600;
+  border: none; background: #fff; cursor: pointer;
+  font-family: inherit; color: var(--text-3);
+  transition: background 0.12s, color 0.12s;
+}
+.tgl:first-child { border-right: 1.5px solid var(--border); }
+.tgl.yes.active { background: var(--green); color: #fff; border-color: var(--green); }
+.tgl.no.active  { background: var(--red);   color: #fff; border-color: var(--red); }
+.tgl:disabled   { opacity: 0.4; cursor: default; }
+.submitted-note {
+  background: var(--green-bg); border: 1px solid #A7F3D0;
+  border-radius: var(--radius-md); padding: 14px 16px;
+  font-size: 14px; font-weight: 600; color: #15803D;
+  text-align: center; margin-bottom: 16px;
+}
+.dash-footer {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  padding: 12px 16px 20px;
+  background: linear-gradient(to top, var(--surface) 60%, transparent);
+  display: flex; justify-content: center;
+}
+.btn-submit {
+  background: var(--navy); color: var(--gold-bright);
+  border: 1.5px solid rgba(201,168,76,0.35);
+  border-radius: var(--radius-md);
+  padding: 15px 0; width: 100%; max-width: 400px;
+  font-size: 15px; font-weight: 700; cursor: pointer;
+  font-family: inherit; letter-spacing: 0.06em;
+  box-shadow: var(--shadow-md);
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+.btn-submit:hover { background: var(--navy-card); border-color: var(--gold); }
+.btn-submit:active { transform: scale(0.98); }
+.btn-submit:disabled { opacity: 0.4; cursor: default; }
+
+/* ── MODAL ── */
+.modal-bg {
+  display: none; position: fixed; inset: 0;
+  background: rgba(10,22,40,0.7); z-index: 9000;
+  align-items: center; justify-content: center;
+  padding: 20px;
+}
+.modal-bg.show { display: flex; }
+.modal-card {
+  background: #fff; border-radius: var(--radius-xl);
+  padding: 36px 32px; text-align: center; max-width: 320px; width: 100%;
+  box-shadow: var(--shadow-lg);
+  animation: pop-in 0.28s cubic-bezier(0.34,1.56,0.64,1);
+}
+@keyframes pop-in {
+  from { opacity:0; transform: scale(0.82) translateY(20px); }
+  to   { opacity:1; transform: scale(1) translateY(0); }
+}
+.modal-icon {
+  width: 60px; height: 60px; border-radius: 50%;
+  background: var(--green-bg);
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 16px;
+}
+.modal-icon svg { width: 30px; height: 30px; }
+.modal-title { font-size: 24px; font-weight: 700; color: var(--text-1); margin-bottom: 6px; }
+.modal-body  { font-size: 14px; color: var(--text-2); }
+
+/* ══════════════════════════════════════
+   ADMIN LOGIN PAGE
+══════════════════════════════════════ */
+#page-admin-login {
+  align-items: center; justify-content: center;
+  background: var(--navy); padding: 24px 20px;
+}
+.admin-login-card {
+  background: var(--navy-card); border: 1px solid rgba(201,168,76,0.2);
+  border-radius: var(--radius-xl); padding: 32px 28px;
+  width: 100%; max-width: 380px; box-shadow: var(--shadow-lg);
+}
+.admin-login-title {
+  font-size: 20px; font-weight: 700; color: #fff; margin-bottom: 4px;
+}
+.admin-login-sub { font-size: 13px; color: var(--text-3); margin-bottom: 24px; }
+.field-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.field-label { font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.5); letter-spacing: 0.08em; text-transform: uppercase; }
+.field-input {
+  background: rgba(255,255,255,0.06);
+  border: 1.5px solid rgba(255,255,255,0.1);
+  border-radius: var(--radius-md);
+  padding: 13px 16px; font-size: 15px; color: #fff;
+  font-family: inherit; outline: none; width: 100%;
+  transition: border-color 0.2s;
+}
+.field-input:focus { border-color: rgba(201,168,76,0.5); }
+.field-input::placeholder { color: rgba(255,255,255,0.2); }
+.btn-full {
+  width: 100%; background: var(--gold); color: var(--navy);
+  border: none; border-radius: var(--radius-md); padding: 14px;
+  font-size: 15px; font-weight: 700; cursor: pointer; font-family: inherit;
+  transition: background 0.15s, transform 0.1s;
+  margin-top: 8px;
+}
+.btn-full:hover  { background: var(--gold-bright); }
+.btn-full:active { transform: scale(0.98); }
+.admin-login-err { font-size: 13px; color: #F87171; margin-top: 10px; min-height: 20px; text-align: center; }
+.back-link { font-size: 13px; color: var(--text-3); cursor: pointer; text-align: center; margin-top: 16px; }
+.back-link:hover { color: var(--gold); }
+
+/* ══════════════════════════════════════
+   ADMIN SHELL
+══════════════════════════════════════ */
+#page-admin {
+  background: var(--surface);
+  color: var(--text-1);
+}
+.admin-top-bar {
+  background: var(--navy);
+  padding: 14px 20px;
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1.5px solid rgba(201,168,76,0.2);
+  flex-shrink: 0;
+}
+.admin-top-title { font-size: 17px; font-weight: 700; color: var(--gold-bright); }
+.admin-top-sub   { font-size: 11px; color: rgba(255,255,255,0.35); margin-top: 1px; }
+.btn-icon {
+  background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12);
+  border-radius: var(--radius-sm); padding: 8px 12px; color: rgba(255,255,255,0.6);
+  font-size: 12px; font-weight: 500; cursor: pointer; font-family: inherit;
+  transition: background 0.15s; white-space: nowrap;
+}
+.btn-icon:hover { background: rgba(255,255,255,0.12); color: #fff; }
+
+/* Bottom nav */
+.admin-bottom-nav {
+  display: flex; background: var(--navy);
+  border-top: 1px solid rgba(255,255,255,0.08);
+  flex-shrink: 0; position: sticky; bottom: 0;
+}
+.admin-nav-item {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  padding: 10px 4px 12px; border: none; background: none;
+  cursor: pointer; font-family: inherit; color: rgba(255,255,255,0.35);
+  font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+  transition: color 0.15s; gap: 4px;
+}
+.admin-nav-item svg { width: 20px; height: 20px; }
+.admin-nav-item.active { color: var(--gold-bright); }
+.admin-nav-item.active .nav-dot {
+  width: 4px; height: 4px; background: var(--gold); border-radius: 50;
+}
+
+/* Panel scroll area */
+.admin-scroll { flex: 1; overflow-y: auto; padding: 16px; }
+
+/* Cards */
+.a-card {
+  background: var(--surface-2); border-radius: var(--radius-lg);
+  border: 1px solid var(--border); padding: 16px; margin-bottom: 14px;
+  box-shadow: var(--shadow-sm);
+}
+.a-card-title {
+  font-size: 13px; font-weight: 700; color: var(--text-1);
+  margin-bottom: 14px; padding-bottom: 10px;
+  border-bottom: 1px solid var(--border); letter-spacing: 0.01em;
+}
+/* Search bar */
+.search-wrap {
+  position: relative; margin-bottom: 14px;
+}
+.search-wrap svg {
+  position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+  color: var(--text-3); width: 16px; height: 16px; pointer-events: none;
+}
+.search-input {
+  width: 100%; padding: 11px 14px 11px 38px;
+  background: var(--surface); border: 1.5px solid var(--border);
+  border-radius: var(--radius-md); font-size: 14px; font-family: inherit;
+  outline: none; color: var(--text-1); transition: border-color 0.2s;
+}
+.search-input:focus { border-color: var(--blue); }
+.search-input::placeholder { color: var(--text-3); }
+
+/* Table */
+.a-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.a-table th {
+  text-align: left; font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--text-3); padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.a-table td {
+  padding: 11px 10px; border-bottom: 1px solid #F1F3F7;
+  vertical-align: middle; color: var(--text-1);
+}
+.a-table tr:last-child td { border-bottom: none; }
+.a-table tr:hover td { background: #FAFBFD; }
+
+/* Form elements */
+.f-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 8px; }
+.f-col { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 120px; }
+.f-col label { font-size: 11px; font-weight: 600; color: var(--text-2); letter-spacing: 0.06em; text-transform: uppercase; }
+.f-input {
+  padding: 10px 12px; border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm); font-size: 14px; font-family: inherit;
+  background: #fff; outline: none; color: var(--text-1);
+  transition: border-color 0.2s; width: 100%;
+}
+.f-input:focus { border-color: var(--blue); }
+.f-input::placeholder { color: var(--text-3); }
+.f-input-sm { max-width: 80px; text-align: center; font-weight: 600; }
+
+.btn { padding: 9px 16px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid transparent; font-family: inherit; transition: background 0.15s, transform 0.1s; white-space: nowrap; }
+.btn:active { transform: scale(0.97); }
+.btn-primary { background: var(--blue);  color: #fff; }
+.btn-primary:hover { background: #1d4ed8; }
+.btn-success { background: var(--green); color: #fff; }
+.btn-success:hover { background: #15803D; }
+.btn-danger  { background: var(--red);   color: #fff; }
+.btn-danger:hover  { background: #B91C1C; }
+.btn-ghost   { background: #fff; border-color: var(--border); color: var(--text-1); }
+.btn-ghost:hover   { background: var(--surface); }
+.btn-sm { padding: 6px 12px; font-size: 12px; }
+.btn-gold { background: var(--gold); color: var(--navy); font-weight: 700; }
+.btn-gold:hover { background: var(--gold-bright); }
+
+.badge { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+.badge-gold  { background: var(--amber-bg); color: var(--amber); }
+.badge-green { background: var(--green-bg); color: var(--green); }
+.badge-red   { background: var(--red-bg);   color: var(--red); }
+.badge-blue  { background: var(--blue-bg);  color: var(--blue); }
+
+.mono { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 11px; background: var(--surface); padding: 2px 7px; border-radius: 4px; color: var(--text-2); }
+
+.alert { padding: 10px 14px; border-radius: var(--radius-sm); font-size: 13px; margin-bottom: 10px; }
+.alert-success { background: var(--green-bg); color: #15803D; border: 1px solid #BBF7D0; }
+.alert-error   { background: var(--red-bg);   color: #991B1B; border: 1px solid #FECACA; }
+.empty { padding: 28px; text-align: center; color: var(--text-3); font-size: 13px; }
+
+/* Back button */
+.back-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 13px; font-weight: 600; color: var(--blue);
+  background: none; border: none; cursor: pointer; padding: 0; margin-bottom: 14px;
+  font-family: inherit;
+}
+.back-btn:hover { text-decoration: underline; }
+
+/* ── Profile / Day editor ── */
+.day-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.day-tile {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 12px; cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.day-tile:hover { border-color: var(--blue); box-shadow: 0 0 0 2px rgba(37,99,235,0.1); }
+.day-tile-date { font-size: 11px; color: var(--text-3); margin-bottom: 4px; }
+.day-tile-pts  { font-size: 20px; font-weight: 700; color: var(--blue); }
+.day-tile-sub  { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+
+.ans-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px; background: var(--surface); border-radius: var(--radius-md); margin-bottom: 8px;
+}
+.ans-q { flex: 1; font-size: 13px; line-height: 1.35; }
+.ans-toggle { display: flex; gap: 6px; flex-shrink: 0; }
+.ans-btn {
+  padding: 6px 14px; border-radius: 6px; border: 1.5px solid var(--border);
+  background: #fff; font-size: 12px; font-weight: 700; cursor: pointer;
+  font-family: inherit; color: var(--text-3); transition: all 0.12s;
+}
+.ans-btn.yes.active { background: var(--green); border-color: var(--green); color: #fff; }
+.ans-btn.no.active  { background: var(--red);   border-color: var(--red);   color: #fff; }
+
+.override-row {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 12px 14px; background: var(--amber-bg); border: 1px solid #FDE68A;
+  border-radius: var(--radius-md); margin-bottom: 10px;
+}
+.override-row label { font-size: 13px; font-weight: 600; }
+
+/* ── Events ── */
+.event-card {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 14px 16px; margin-bottom: 10px;
+}
+.event-card-header {
+  display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 10px;
+}
+.event-name { font-size: 15px; font-weight: 700; color: var(--text-1); }
+.event-type { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+.event-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.eligibility-tag {
+  font-size: 11px; font-weight: 600; padding: 3px 10px;
+  border-radius: 20px; background: var(--blue-bg); color: var(--blue);
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.eligibility-tag.green { background: var(--green-bg); color: var(--green); }
+
+/* ── Report ── */
+.report-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 440px) { .report-cols { grid-template-columns: 1fr; } }
+.report-list { border-radius: var(--radius-lg); overflow: hidden; border: 1px solid var(--border); }
+.report-list-hdr { padding: 12px 14px; font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.report-list-hdr.elig   { background: var(--green-bg); color: var(--green); }
+.report-list-hdr.inelig { background: var(--red-bg);   color: var(--red); }
+.report-list-body { background: #fff; }
+.report-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 14px; border-bottom: 1px solid #F1F3F7; font-size: 13px;
+}
+.report-row:last-child { border-bottom: none; }
+.report-pts { font-weight: 700; color: var(--blue); }
+
+/* Q editor */
+.q-editor-row {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+}
+.q-num-bubble {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--navy); color: var(--gold);
+  font-size: 11px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+
+/* Loading spinner */
+.spinner {
+  width: 20px; height: 20px; border-radius: 50%;
+  border: 2.5px solid rgba(201,168,76,0.2);
+  border-top-color: var(--gold);
+  animation: spin 0.7s linear infinite;
+  margin: 0 auto;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-overlay {
+  position: fixed; inset: 0; background: var(--navy);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 9999; flex-direction: column; gap: 14px;
+}
+.loading-overlay span { font-size: 13px; color: rgba(255,255,255,0.4); }
+
+/* Utility */
+.mt8  { margin-top: 8px; }
+.mt12 { margin-top: 12px; }
+.txt-sm { font-size: 12px; color: var(--text-3); }
 </style>
 </head>
 <body>
 
-<!-- ═══════════════════ LOGIN PAGE ═══════════════════ -->
-<div id="page-login" class="page active">
-  <input id="nfc-input" type="text" autocomplete="off" autofocus>
-  <div class="login-inner">
-    <div class="login-rebbe-frame">
-      <!-- Replace src with your preferred Rebbe image URL -->
-      <img
-        id="rebbe-img"
-        class="login-rebbe-img"
-        src="https://www.chabad.org/media/images/973/aYIk9732349.jpg"
-        alt="The Lubavitcher Rebbe"
-        onerror="this.src='data:image/svg+xml,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'200\' height=\'250\' viewBox=\'0 0 200 250\'><rect fill=\'%231E3A5F\' width=\'200\' height=\'250\' rx=\'4\'/><text x=\'50%25\' y=\'50%25\' dominant-baseline=\'middle\' text-anchor=\'middle\' fill=\'%23C9A84C\' font-family=\'serif\' font-size=\'12\'>Rebbe Photo</text></svg>'"
-      >
-    </div>
-    <div class="login-logo-block">
-      <div class="login-logo-title">Yeshivas Kayitz Program</div>
-      <div class="login-divider"></div>
-      <div class="login-program-name">מבצע שוועצינג׳</div>
-      <div class="login-logo-sub">Mivtzah Sventzich</div>
-    </div>
-    <div class="login-scan-area">
-      <div class="login-scan-label">Scan NFC Card to Sign In</div>
-      <svg class="nfc-icon nfc-pulse" viewBox="0 0 56 56" fill="none">
-        <circle cx="28" cy="28" r="26" stroke="#C9A84C" stroke-width="1.5" stroke-dasharray="4 3"/>
-        <path d="M20 28c0-4.4 3.6-8 8-8" stroke="#C9A84C" stroke-width="2" stroke-linecap="round"/>
-        <path d="M16 28c0-6.6 5.4-12 12-12" stroke="#C9A84C" stroke-width="1.5" stroke-linecap="round" opacity="0.6"/>
-        <path d="M24 28c0-2.2 1.8-4 4-4" stroke="#C9A84C" stroke-width="2" stroke-linecap="round"/>
-        <circle cx="28" cy="28" r="2" fill="#C9A84C"/>
-      </svg>
-    </div>
-    <div id="login-status" class="login-status">Ready for card scan…</div>
-  </div>
-  <button class="login-admin-link" onclick="goAdmin()">Admin</button>
+<!-- ── LOADING SCREEN ── -->
+<div class="loading-overlay" id="loading-overlay">
+  <div class="spinner"></div>
+  <span>Loading…</span>
 </div>
 
-<!-- ═══════════════════ CAMPER DASHBOARD ═══════════════════ -->
+<!-- ── INSTALL BANNER ── -->
+<div id="install-banner">
+  <div class="install-icon">מ</div>
+  <div class="install-text">
+    <strong>Add to Home Screen</strong>
+    <span>Get the full Mivtzah Sventzich app experience</span>
+  </div>
+  <div class="install-btns">
+    <button class="btn-install" id="btn-install-accept">Install</button>
+    <button class="btn-install-dismiss" id="btn-install-dismiss">✕</button>
+  </div>
+</div>
+
+<!-- ══════════ LOGIN PAGE ══════════ -->
+<div id="page-login" class="page active">
+  <div class="login-inner">
+    <div class="login-rebbe-frame">
+      <img id="rebbe-img" class="login-rebbe-img"
+        src="https://www.chabad.org/media/images/973/aYIk9732349.jpg"
+        alt="The Lubavitcher Rebbe"
+        onerror="this.style.display='none'">
+    </div>
+    <div class="login-logo-block">
+      <div class="login-ykp">Yeshivas Kayitz Program</div>
+      <div class="login-program-he">מבצע שוועצינג׳</div>
+      <div class="login-program-en">Mivtzah Sventzich</div>
+    </div>
+
+    <div class="nfc-field-wrap">
+      <span class="nfc-icon-left">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M12 2a10 10 0 0 1 10 10"/><path d="M12 6a6 6 0 0 1 6 6"/><path d="M12 10a2 2 0 0 1 2 2"/><circle cx="12" cy="12" r="1" fill="currentColor"/>
+        </svg>
+      </span>
+      <input id="nfc-input" type="text" inputmode="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Scan NFC card or type ID…">
+      <button class="nfc-clear-btn" id="nfc-clear" onclick="document.getElementById('nfc-input').value='';document.getElementById('nfc-input').focus();">×</button>
+    </div>
+    <button class="btn-login" onclick="attemptLogin()">Sign In</button>
+    <div id="login-status" class="login-status">Ready for card scan…</div>
+  </div>
+  <button class="login-admin-btn" id="admin-trigger">Admin</button>
+</div>
+
+<!-- ══════════ ADMIN LOGIN ══════════ -->
+<div id="page-admin-login" class="page">
+  <div class="admin-login-card">
+    <div class="admin-login-title">Admin Access</div>
+    <div class="admin-login-sub">Enter your administrator password to continue.</div>
+    <div class="field-group">
+      <label class="field-label">Password</label>
+      <input type="password" id="admin-pw-input" class="field-input" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="btn-full" onclick="attemptAdminLogin()">Unlock Dashboard</button>
+    <div id="admin-login-err" class="admin-login-err"></div>
+    <div class="back-link" onclick="goLogin()">← Back to camper login</div>
+  </div>
+</div>
+
+<!-- ══════════ CAMPER DASHBOARD ══════════ -->
 <div id="page-dashboard" class="page">
   <div class="dash-header">
     <div class="dash-greeting">
       <span class="dash-hello">Welcome back,</span>
       <span class="dash-name" id="dash-name">—</span>
     </div>
-    <div class="dash-score-pill">
-      <div class="dash-score-label">Total Points</div>
-      <div class="dash-score-value" id="dash-score">0</div>
-      <div class="dash-score-pts">pts</div>
+    <div class="score-badge">
+      <div class="score-label">Points</div>
+      <div class="score-num" id="dash-score">0</div>
+      <div class="score-pts">total</div>
     </div>
   </div>
   <div class="dash-body">
-    <div class="dash-section-label">Daily Duch</div>
-    <div class="dash-date-badge">
-      📅 <span id="dash-date-label">—</span>
-    </div>
-    <div id="already-submitted-banner" class="already-submitted-banner" style="display:none;">
+    <div class="section-eyebrow">Daily Duch</div>
+    <div class="date-chip">📅 <span id="dash-date-label">—</span></div>
+    <div id="dash-submitted-note" class="submitted-note" style="display:none;">
       ✅ You've already submitted today's Duch!
     </div>
-    <div class="checklist-card" id="checklist-card">
-      <div id="checklist-items"></div>
-    </div>
+    <div class="checklist-wrap" id="checklist-wrap"></div>
   </div>
   <div class="dash-footer">
     <button class="btn-submit" id="submit-btn" onclick="submitDuch()">Submit Duch</button>
   </div>
 </div>
 
-<!-- ═══════════════════ SUBMITTED MODAL ═══════════════════ -->
-<div class="modal-overlay" id="submit-modal">
-  <div class="modal-box">
-    <div class="modal-check">
-      <svg viewBox="0 0 32 32" fill="none">
-        <path d="M6 16l8 8 12-12" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<!-- Success Modal -->
+<div class="modal-bg" id="submit-modal">
+  <div class="modal-card">
+    <div class="modal-icon">
+      <svg viewBox="0 0 30 30" fill="none">
+        <path d="M5 15l7 7 13-13" stroke="#16A34A" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </div>
     <div class="modal-title">Submitted!</div>
-    <div class="modal-sub" id="modal-pts-msg">Great work today.</div>
+    <div class="modal-body" id="modal-msg">Great work today.</div>
   </div>
 </div>
 
-<!-- ═══════════════════ ADMIN PAGE ═══════════════════ -->
+<!-- ══════════ ADMIN SHELL ══════════ -->
 <div id="page-admin" class="page">
-  <div class="admin-header">
+  <div class="admin-top-bar">
     <div>
-      <div class="admin-title">Mivtzah Sventzich — Admin</div>
-      <div class="admin-subtitle">Camp Management Dashboard</div>
+      <div class="admin-top-title">Mivtzah Admin</div>
+      <div class="admin-top-sub">Camp Management Dashboard</div>
     </div>
-    <button class="admin-nav-back" onclick="goLogin()">← Back to Login</button>
+    <button class="btn-icon" onclick="adminLogout()">Sign Out</button>
   </div>
-  <div class="admin-nav">
-    <button class="admin-tab active" data-panel="campers" onclick="switchPanel('campers',this)">Campers</button>
-    <button class="admin-tab" data-panel="questions" onclick="switchPanel('questions',this)">Mivtzah Config</button>
-    <button class="admin-tab" data-panel="report" onclick="switchPanel('report',this)">Weekly Report</button>
-  </div>
-  <div class="admin-content">
 
-    <!-- PANEL: CAMPERS -->
-    <div id="panel-campers" class="admin-panel active">
-      <!-- Sub-views: list | profile -->
-      <div id="admin-campers-list">
-        <div class="admin-card">
-          <h3>Add New Camper</h3>
-          <div class="form-row">
-            <div class="form-group">
-              <label>First Name</label>
-              <input type="text" id="add-first" placeholder="Mendy">
-            </div>
-            <div class="form-group">
-              <label>Last Name</label>
-              <input type="text" id="add-last" placeholder="Cohen">
-            </div>
-            <div class="form-group">
-              <label>NFC Card ID (optional)</label>
-              <input type="text" id="add-nfc" placeholder="scan or type ID">
-            </div>
-            <div class="form-group" style="justify-content:flex-end">
-              <button class="btn btn-primary" onclick="addCamper()">Add Camper</button>
-            </div>
-          </div>
-          <div id="add-camper-msg"></div>
+  <!-- PANEL: CAMPERS -->
+  <div id="admin-panel-campers" class="admin-scroll" style="display:none;">
+
+    <div id="view-campers-list">
+      <div class="a-card">
+        <div class="a-card-title">Add New Camper</div>
+        <div class="f-row">
+          <div class="f-col"><label>First Name</label><input class="f-input" id="add-first" placeholder="Mendy"></div>
+          <div class="f-col"><label>Last Name</label><input class="f-input" id="add-last" placeholder="Cohen"></div>
         </div>
-        <div class="admin-card">
-          <h3>All Campers</h3>
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>NFC Card ID</th>
-                <th>Total Points</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="campers-table-body"></tbody>
+        <div class="f-row">
+          <div class="f-col"><label>NFC Card ID</label><input class="f-input" id="add-nfc" placeholder="scan or type ID"></div>
+          <div style="align-self:flex-end;"><button class="btn btn-primary" onclick="addCamper()">Add Camper</button></div>
+        </div>
+        <div id="add-camper-msg"></div>
+      </div>
+
+      <div class="a-card">
+        <div class="a-card-title">All Campers</div>
+        <div class="search-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input class="search-input" id="camper-search" placeholder="Search by name or NFC ID…" oninput="renderCampersTable()">
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="a-table">
+            <thead><tr><th>Name</th><th>NFC ID</th><th>Points</th><th>Actions</th></tr></thead>
+            <tbody id="campers-tbody"></tbody>
           </table>
         </div>
       </div>
+    </div>
 
-      <!-- Camper profile / edit view -->
-      <div id="admin-camper-profile" style="display:none;">
-        <button class="admin-back-btn" onclick="closeCamperProfile()">← Back to All Campers</button>
-        <div class="admin-card">
-          <h3 id="profile-title">Camper Profile</h3>
-          <div class="form-row" style="margin-bottom:8px;">
-            <div class="form-group">
-              <label>First Name</label>
-              <input type="text" id="profile-first">
-            </div>
-            <div class="form-group">
-              <label>Last Name</label>
-              <input type="text" id="profile-last">
-            </div>
-            <div class="form-group">
-              <label>NFC Card ID</label>
-              <input type="text" id="profile-nfc" placeholder="Tap card or type ID">
-            </div>
-            <div class="form-group" style="justify-content:flex-end">
-              <button class="btn btn-primary" onclick="saveProfile()">Save</button>
-            </div>
-          </div>
-          <div id="profile-save-msg"></div>
+    <div id="view-camper-profile" style="display:none;">
+      <button class="back-btn" onclick="closeCamperProfile()">← All Campers</button>
+      <div class="a-card">
+        <div class="a-card-title" id="profile-card-title">Edit Profile</div>
+        <div class="f-row">
+          <div class="f-col"><label>First</label><input class="f-input" id="prof-first"></div>
+          <div class="f-col"><label>Last</label><input class="f-input" id="prof-last"></div>
         </div>
-        <div class="admin-card">
-          <h3>Daily Submissions — Select a Day to Edit</h3>
-          <div class="day-grid" id="profile-days-grid"></div>
+        <div class="f-row">
+          <div class="f-col"><label>NFC Card ID</label><input class="f-input" id="prof-nfc"></div>
+          <div style="align-self:flex-end;"><button class="btn btn-primary" onclick="saveProfile()">Save</button></div>
         </div>
-        <div id="profile-day-editor" style="display:none;">
-          <div class="admin-card">
-            <h3 id="day-editor-title">Edit Day</h3>
-            <div class="pts-override-row" style="margin-bottom:14px;">
-              <label>Manual Point Override for this Day:</label>
-              <input type="number" id="day-pts-override" min="0">
-              <span style="font-size:12px;color:#888;">Leave blank to auto-calculate</span>
-            </div>
-            <div class="ans-grid" id="day-ans-grid"></div>
-            <div style="margin-top:14px; display:flex; gap:10px;">
-              <button class="btn btn-success" onclick="saveDayEdit()">Save Changes</button>
-              <button class="btn btn-ghost" onclick="closeDayEditor()">Cancel</button>
-            </div>
-            <div id="day-edit-msg" style="margin-top:8px;"></div>
-          </div>
+        <div id="prof-save-msg"></div>
+      </div>
+      <div class="a-card">
+        <div class="a-card-title">Total Points Override</div>
+        <div class="override-row">
+          <label>Override total points:</label>
+          <input type="number" class="f-input f-input-sm" id="total-pts-input" min="0">
+          <button class="btn btn-gold" onclick="saveTotalOverride()">Apply</button>
         </div>
-        <div class="admin-card">
-          <h3>Total Points Override</h3>
-          <div class="pts-override-row">
-            <label>Override Total Points:</label>
-            <input type="number" id="total-pts-override" min="0" id="total-pts-override">
-            <button class="btn btn-primary" onclick="saveTotalOverride()">Apply</button>
+        <div id="override-msg"></div>
+      </div>
+      <div class="a-card">
+        <div class="a-card-title">Daily Submissions — tap to edit</div>
+        <div class="day-grid" id="day-grid"></div>
+      </div>
+      <div id="day-editor-wrap" style="display:none;">
+        <div class="a-card">
+          <div class="a-card-title" id="day-editor-title">Edit Day</div>
+          <div class="override-row">
+            <label>Point override for this day:</label>
+            <input type="number" class="f-input f-input-sm" id="day-pts-ov" min="0">
+            <span class="txt-sm">blank = auto</span>
           </div>
-          <div id="total-override-msg" style="margin-top:8px;"></div>
+          <div id="day-ans-grid"></div>
+          <div class="f-row mt8">
+            <button class="btn btn-success" onclick="saveDayEdit()">Save Changes</button>
+            <button class="btn btn-ghost" onclick="closeDayEditor()">Cancel</button>
+          </div>
+          <div id="day-edit-msg" class="mt8"></div>
         </div>
       </div>
     </div>
+  </div>
 
-    <!-- PANEL: QUESTIONS -->
-    <div id="panel-questions" class="admin-panel">
-      <div class="admin-card">
-        <h3>Weekly Event Threshold</h3>
-        <div class="threshold-row">
-          <label>Points needed to qualify:</label>
-          <input type="number" id="threshold-input" min="0">
-          <button class="btn btn-primary" onclick="saveThreshold()">Save</button>
-        </div>
-        <div id="threshold-msg"></div>
+  <!-- PANEL: CONFIG -->
+  <div id="admin-panel-config" class="admin-scroll" style="display:none;">
+    <div class="a-card">
+      <div class="a-card-title">Weekly Event Threshold</div>
+      <div class="override-row">
+        <label>Pts needed to qualify:</label>
+        <input type="number" class="f-input f-input-sm" id="threshold-input" min="0">
+        <button class="btn btn-primary" onclick="saveThreshold()">Save</button>
       </div>
-      <div class="admin-card">
-        <h3>Duch Questions & Point Values</h3>
-        <div id="questions-editor"></div>
-        <div style="margin-top:14px; display:flex; gap:10px; align-items:center;">
-          <button class="btn btn-primary" onclick="saveQuestions()">Save Questions</button>
-          <span style="font-size:12px;color:#888;">Changes affect all future submissions.</span>
-        </div>
-        <div id="questions-msg" style="margin-top:8px;"></div>
-      </div>
+      <div id="threshold-msg"></div>
     </div>
-
-    <!-- PANEL: REPORT -->
-    <div id="panel-report" class="admin-panel">
-      <div class="admin-card">
-        <h3 id="report-threshold-label">Weekly Event Report</h3>
-        <div class="report-split" id="report-split"></div>
+    <div class="a-card">
+      <div class="a-card-title">Duch Questions & Point Values</div>
+      <div id="q-editor"></div>
+      <div class="f-row mt12">
+        <button class="btn btn-primary" onclick="saveQuestions()">Save Questions</button>
+        <span class="txt-sm">Changes apply to future submissions.</span>
       </div>
+      <div id="q-msg" class="mt8"></div>
     </div>
+  </div>
 
+  <!-- PANEL: EVENTS -->
+  <div id="admin-panel-events" class="admin-scroll" style="display:none;">
+    <div class="a-card">
+      <div class="a-card-title">Create New Event</div>
+      <div class="f-row">
+        <div class="f-col"><label>Event Name</label><input class="f-input" id="evt-name" placeholder="e.g. Pizza Party, Trip to Zoo"></div>
+        <div class="f-col" style="max-width:130px;"><label>Min Points</label><input type="number" class="f-input" id="evt-pts" placeholder="20" min="0"></div>
+      </div>
+      <div class="f-row">
+        <div class="f-col">
+          <label>Eligibility Type</label>
+          <select class="f-input" id="evt-type">
+            <option value="min_points">Minimum Points ≥ threshold</option>
+            <option value="top_n">Top N Campers</option>
+            <option value="all">All Campers (attendance)</option>
+          </select>
+        </div>
+        <div class="f-col" style="max-width:120px;" id="evt-topn-wrap">
+          <label>Top N</label>
+          <input type="number" class="f-input" id="evt-topn" placeholder="10" min="1">
+        </div>
+      </div>
+      <div class="f-row">
+        <div class="f-col"><label>Date (optional)</label><input type="date" class="f-input" id="evt-date"></div>
+        <div class="f-col"><label>Notes</label><input class="f-input" id="evt-notes" placeholder="Location, time, etc."></div>
+      </div>
+      <button class="btn btn-primary mt8" onclick="addEvent()">Create Event</button>
+      <div id="evt-msg" class="mt8"></div>
+    </div>
+    <div id="events-list"></div>
+  </div>
+
+  <!-- PANEL: REPORT -->
+  <div id="admin-panel-report" class="admin-scroll" style="display:none;">
+    <div class="a-card" style="margin-bottom:10px;">
+      <div class="a-card-title" id="report-title">Weekly Report</div>
+      <div class="report-cols" id="report-cols"></div>
+    </div>
+    <div id="event-reports"></div>
+  </div>
+
+  <!-- BOTTOM NAV -->
+  <div class="admin-bottom-nav">
+    <button class="admin-nav-item active" id="nav-campers" onclick="switchAdminPanel('campers')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M21 21v-2a4 4 0 0 0-3-3.87"/></svg>
+      Campers
+    </button>
+    <button class="admin-nav-item" id="nav-events" onclick="switchAdminPanel('events')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg>
+      Events
+    </button>
+    <button class="admin-nav-item" id="nav-config" onclick="switchAdminPanel('config')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+      Config
+    </button>
+    <button class="admin-nav-item" id="nav-report" onclick="switchAdminPanel('report')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+      Report
+    </button>
   </div>
 </div>
 
+<!-- ══════════════════════════════════════
+     JAVASCRIPT
+══════════════════════════════════════ -->
 <script>
-/* ═══════════════════════════════════════════════════
-   DATA LAYER  –  localStorage persistence
-═══════════════════════════════════════════════════ */
-const DB = {
-  KEY: 'ms_app_v1',
-  defaults() {
-    return {
-      campers: [],          // [{id, firstName, lastName, nfcId, pointsOverride, days:{}}]
-      questions: [
-        { text: 'Did you daven Shacharis with a minyan?',      pts: 3 },
-        { text: 'Did you learn your daily Chitas?',            pts: 3 },
-        { text: 'Did you do something nice for a friend?',     pts: 2 },
-        { text: 'Did you learn the Inyan HaYom?',              pts: 4 },
-        { text: 'Did you put on Tefillin properly today?',     pts: 4 },
-        { text: 'Did you make a hachlata (resolution) today?', pts: 4 },
-      ],
-      threshold: 20,
-      nextId: 1,
-    };
+/* ════════════════════════════════
+   SUPABASE CLIENT (inline, no npm)
+════════════════════════════════ */
+// We use a minimal fetch wrapper — no external SDK needed for free-tier usage
+const SB = {
+  url: SUPABASE_URL,
+  key: SUPABASE_ANON_KEY,
+  async req(method, path, body) {
+    const r = await fetch(`${this.url}/rest/v1/${path}`, {
+      method,
+      headers: {
+        'apikey': this.key,
+        'Authorization': `Bearer ${this.key}`,
+        'Content-Type': 'application/json',
+        'Prefer': method === 'POST' ? 'return=representation' : 'return=minimal'
+      },
+      body: body ? JSON.stringify(body) : undefined
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.message || `HTTP ${r.status}`);
+    }
+    return r.status === 204 ? null : r.json();
   },
-  load() {
-    try {
-      const raw = localStorage.getItem(this.KEY);
-      if (!raw) return this.defaults();
-      const d = JSON.parse(raw);
-      // backfill missing fields
-      if (!d.questions) d.questions = this.defaults().questions;
-      if (d.threshold == null) d.threshold = 20;
-      if (!d.nextId) d.nextId = d.campers.length + 1;
-      return d;
-    } catch(e) { return this.defaults(); }
-  },
-  save(data) {
-    localStorage.setItem(this.KEY, JSON.stringify(data));
-  }
+  get(table, query='')   { return this.req('GET',    `${table}?${query}`); },
+  post(table, body)      { return this.req('POST',   table, body); },
+  patch(table, query, b) { return this.req('PATCH',  `${table}?${query}`, b); },
+  del(table, query)      { return this.req('DELETE', `${table}?${query}`); },
 };
 
-let db = DB.load();
-let currentCamper = null;    // logged-in camper id
-let editingCamperId = null;  // admin editing
-let editingDayKey = null;
+/* ════════════════════════════════
+   LOCAL FALLBACK STORE (when Supabase not configured)
+════════════════════════════════ */
+const LOCAL_KEY = 'ms_local_v2';
+let localDB = null;
 
-/* ═══════════════════════════════════════════════════
-   UTILS
-═══════════════════════════════════════════════════ */
-function todayKey() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+function getLocalDB() {
+  if (localDB) return localDB;
+  try { localDB = JSON.parse(localStorage.getItem(LOCAL_KEY)) || buildDefaultLocal(); }
+  catch { localDB = buildDefaultLocal(); }
+  return localDB;
 }
-function formatDateLabel(key) {
-  if (!key) return '';
-  const [y,m,d] = key.split('-').map(Number);
-  return new Date(y,m-1,d).toLocaleDateString('en-US', {weekday:'long', month:'long', day:'numeric'});
+function buildDefaultLocal() {
+  return {
+    campers: [],
+    questions: [
+      { id:1, text:'Did you daven Shacharis with a minyan?',    pts:3 },
+      { id:2, text:'Did you learn your daily Chitas?',          pts:3 },
+      { id:3, text:'Did you do something nice for a friend?',   pts:2 },
+      { id:4, text:'Did you learn the Inyan HaYom?',            pts:4 },
+      { id:5, text:'Did you put on Tefillin properly today?',   pts:4 },
+      { id:6, text:'Did you make a hachlata today?',            pts:4 },
+    ],
+    events: [],
+    settings: { threshold: 20, admin_password: ADMIN_PASSWORD_FALLBACK },
+    nextId: 1,
+  };
 }
-function camperById(id) {
-  return db.campers.find(c => c.id === id);
+function saveLocalDB() {
+  localStorage.setItem(LOCAL_KEY, JSON.stringify(localDB));
 }
-function calcDayPoints(camper, dayKey) {
-  const day = camper.days?.[dayKey];
-  if (!day) return 0;
-  if (day.override != null) return day.override;
+
+// Detect if Supabase is configured
+function supabaseConfigured() {
+  return SUPABASE_URL !== 'https://YOUR_PROJECT.supabase.co' && SUPABASE_ANON_KEY !== 'YOUR_ANON_KEY';
+}
+
+/* ════════════════════════════════
+   DATA ABSTRACTION LAYER
+   — uses Supabase if configured, else localStorage
+════════════════════════════════ */
+
+// ---------- CAMPERS ----------
+async function dbGetCampers() {
+  if (supabaseConfigured()) {
+    return await SB.get('campers', 'select=*&order=last_name.asc');
+  }
+  const db = getLocalDB();
+  return db.campers.map(c => ({
+    ...c,
+    total_points: calcLocalTotalPoints(c),
+  }));
+}
+async function dbAddCamper(first, last, nfc) {
+  if (supabaseConfigured()) {
+    const rows = await SB.post('campers', { first_name:first, last_name:last, nfc_id:nfc||null, total_points:0, points_override:null, days:{} });
+    return rows[0];
+  }
+  const db = getLocalDB();
+  if (nfc && db.campers.find(c => c.nfc_id && c.nfc_id.toLowerCase() === nfc.toLowerCase())) throw new Error('NFC ID already in use');
+  const c = { id: db.nextId++, first_name:first, last_name:last, nfc_id:nfc||'', days:{}, points_override:null };
+  db.campers.push(c);
+  saveLocalDB();
+  return c;
+}
+async function dbDeleteCamper(id) {
+  if (supabaseConfigured()) {
+    return await SB.del('campers', `id=eq.${id}`);
+  }
+  const db = getLocalDB();
+  db.campers = db.campers.filter(c => c.id !== id);
+  saveLocalDB();
+}
+async function dbUpdateCamper(id, fields) {
+  if (supabaseConfigured()) {
+    return await SB.patch('campers', `id=eq.${id}`, fields);
+  }
+  const db = getLocalDB();
+  const c = db.campers.find(x => x.id === id);
+  if (c) Object.assign(c, fields);
+  saveLocalDB();
+}
+async function dbGetCamperByNfc(nfcId) {
+  if (supabaseConfigured()) {
+    const rows = await SB.get('campers', `nfc_id=eq.${encodeURIComponent(nfcId)}&select=*`);
+    return rows?.[0] || null;
+  }
+  const db = getLocalDB();
+  return db.campers.find(c => c.nfc_id && c.nfc_id.toLowerCase() === nfcId.toLowerCase()) || null;
+}
+
+// ---------- QUESTIONS ----------
+async function dbGetQuestions() {
+  if (supabaseConfigured()) {
+    return await SB.get('questions', 'select=*&order=position.asc');
+  }
+  return getLocalDB().questions;
+}
+async function dbSaveQuestions(qs) {
+  if (supabaseConfigured()) {
+    // upsert
+    return await SB.req('POST', 'questions', qs.map((q,i) => ({ ...q, position:i })));
+  }
+  const db = getLocalDB();
+  db.questions = qs;
+  saveLocalDB();
+}
+
+// ---------- SETTINGS ----------
+async function dbGetSettings() {
+  if (supabaseConfigured()) {
+    const rows = await SB.get('app_settings', 'select=*');
+    const map = {};
+    (rows||[]).forEach(r => { map[r.key] = r.value; });
+    return { threshold: parseInt(map.threshold||'20'), admin_password: map.admin_password || ADMIN_PASSWORD_FALLBACK };
+  }
+  return getLocalDB().settings;
+}
+async function dbSetSetting(key, value) {
+  if (supabaseConfigured()) {
+    await SB.req('POST', 'app_settings', { key, value: String(value) });
+    return;
+  }
+  const db = getLocalDB();
+  db.settings[key] = value;
+  saveLocalDB();
+}
+
+// ---------- EVENTS ----------
+async function dbGetEvents() {
+  if (supabaseConfigured()) {
+    return await SB.get('events', 'select=*&order=created_at.desc');
+  }
+  return getLocalDB().events || [];
+}
+async function dbAddEvent(evt) {
+  if (supabaseConfigured()) {
+    const rows = await SB.post('events', evt);
+    return rows[0];
+  }
+  const db = getLocalDB();
+  evt.id = db.nextId++;
+  db.events = db.events || [];
+  db.events.push(evt);
+  saveLocalDB();
+  return evt;
+}
+async function dbDeleteEvent(id) {
+  if (supabaseConfigured()) {
+    return await SB.del('events', `id=eq.${id}`);
+  }
+  const db = getLocalDB();
+  db.events = (db.events||[]).filter(e => e.id !== id);
+  saveLocalDB();
+}
+
+// ---------- LOCAL POINT CALC ----------
+function calcLocalTotalPoints(c) {
+  if (c.points_override != null) return c.points_override;
+  const db = getLocalDB();
   let pts = 0;
-  (day.answers || []).forEach((ans, i) => {
-    if (ans === true && db.questions[i]) pts += db.questions[i].pts;
+  Object.entries(c.days || {}).forEach(([dk, day]) => {
+    if (day.override != null) { pts += day.override; return; }
+    (day.answers||[]).forEach((ans, i) => {
+      if (ans === true && db.questions[i]) pts += db.questions[i].pts;
+    });
   });
   return pts;
 }
-function calcTotalPoints(camper) {
-  if (camper.pointsOverride != null) return camper.pointsOverride;
-  let total = 0;
-  Object.keys(camper.days || {}).forEach(dk => {
-    total += calcDayPoints(camper, dk);
-  });
-  return total;
-}
-function showEl(id, show) {
-  const el = document.getElementById(id);
-  if (el) el.style.display = show ? '' : 'none';
-}
-function showPage(pageId) {
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.getElementById(pageId)?.classList.add('active');
-}
-function flashMsg(id, text, type='success') {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.innerHTML = `<div class="alert alert-${type}">${text}</div>`;
-  setTimeout(() => el.innerHTML = '', 3000);
+function calcCamperPoints(c) {
+  // Unified: works for both Supabase (has total_points) and local
+  if (c.points_override != null) return c.points_override;
+  if (!supabaseConfigured()) return calcLocalTotalPoints(c);
+  return c.total_points || 0;
 }
 
-/* ═══════════════════════════════════════════════════
-   NFC / LOGIN
-═══════════════════════════════════════════════════ */
-let nfcBuffer = '';
-let nfcTimer = null;
-const nfcInput = document.getElementById('nfc-input');
+/* ════════════════════════════════
+   APP STATE
+════════════════════════════════ */
+let appCampers   = [];
+let appQuestions = [];
+let appSettings  = { threshold: 20 };
+let appEvents    = [];
+let currentCamper   = null;
+let sessionAnswers  = {};
+let editCamperId    = null;
+let editDayKey      = null;
+let adminAuthed     = false;
 
-// Keep NFC input focused on login page
-document.addEventListener('click', () => {
-  if (document.getElementById('page-login').classList.contains('active')) {
-    nfcInput.focus();
+/* ════════════════════════════════
+   BOOT
+════════════════════════════════ */
+async function boot() {
+  // Register SW
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
   }
-});
-nfcInput.focus();
-
-nfcInput.addEventListener('keydown', (e) => {
-  if (!document.getElementById('page-login').classList.contains('active')) return;
-  clearTimeout(nfcTimer);
-  if (e.key === 'Enter') {
-    const id = nfcBuffer.trim();
-    nfcBuffer = '';
-    if (id) handleNfcScan(id);
+  // PWA install prompt
+  window.addEventListener('beforeinstallprompt', e => {
     e.preventDefault();
-    return;
-  }
-  if (e.key.length === 1) nfcBuffer += e.key;
-  // NFC scanners typically complete in <100ms; treat as scan if chars arrive quickly
-  nfcTimer = setTimeout(() => {
-    const id = nfcBuffer.trim();
-    nfcBuffer = '';
-    if (id.length > 2) handleNfcScan(id);
-  }, 200);
-});
+    deferredInstall = e;
+    document.getElementById('install-banner').classList.add('show');
+  });
+  document.getElementById('btn-install-accept').onclick = async () => {
+    if (deferredInstall) { deferredInstall.prompt(); deferredInstall = null; }
+    document.getElementById('install-banner').classList.remove('show');
+  };
+  document.getElementById('btn-install-dismiss').onclick = () => {
+    document.getElementById('install-banner').classList.remove('show');
+  };
 
-function handleNfcScan(nfcId) {
-  const camper = db.campers.find(c => c.nfcId && c.nfcId.toLowerCase() === nfcId.toLowerCase());
-  const statusEl = document.getElementById('login-status');
-  if (!camper) {
-    statusEl.textContent = `Card not recognised (ID: ${nfcId})`;
-    statusEl.className = 'login-status error';
-    setTimeout(() => {
-      statusEl.textContent = 'Ready for card scan…';
-      statusEl.className = 'login-status';
-    }, 2500);
+  // Admin trigger (tap 5x quickly)
+  let adminTaps = 0, adminTimer;
+  document.getElementById('admin-trigger').onclick = () => {
+    adminTaps++;
+    clearTimeout(adminTimer);
+    adminTimer = setTimeout(() => adminTaps = 0, 2000);
+    if (adminTaps >= 1) goAdminLogin();
+  };
+
+  // Load initial data quietly
+  try {
+    [appSettings, appQuestions, appEvents] = await Promise.all([
+      dbGetSettings(),
+      dbGetQuestions(),
+      dbGetEvents(),
+    ]);
+  } catch(e) { /* offline, use defaults */ }
+
+  // Setup NFC
+  setupNfcInput();
+
+  document.getElementById('loading-overlay').style.display = 'none';
+  showPage('page-login');
+}
+
+let deferredInstall = null;
+
+/* ════════════════════════════════
+   NFC / LOGIN
+════════════════════════════════ */
+const nfcInput = document.getElementById('nfc-input');
+let nfcBuffer = '', nfcTimer;
+
+function setupNfcInput() {
+  // NFC wedge emulates keyboard: fast keystrokes + Enter
+  nfcInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      attemptLogin();
+    }
+  });
+  // Keep focused on login page
+  document.addEventListener('click', e => {
+    const loginPage = document.getElementById('page-login');
+    if (loginPage.classList.contains('active')) {
+      if (e.target !== nfcInput && !e.target.closest('button')) {
+        nfcInput.focus();
+      }
+    }
+  });
+}
+
+async function attemptLogin() {
+  const id = nfcInput.value.trim();
+  if (!id) {
+    setLoginStatus('Tap your card or type your ID.', 'error');
     return;
   }
-  statusEl.textContent = `Welcome, ${camper.firstName}!`;
-  statusEl.className = 'login-status success';
-  currentCamper = camper.id;
-  setTimeout(() => loadDashboard(), 400);
+  setLoginStatus('Looking up…', '');
+  try {
+    const camper = await dbGetCamperByNfc(id);
+    if (!camper) {
+      setLoginStatus(`Card not found. (ID: ${id})`, 'error');
+      nfcInput.select();
+      return;
+    }
+    currentCamper = camper;
+    setLoginStatus(`Welcome, ${camper.first_name}!`, 'success');
+    setTimeout(loadDashboard, 350);
+  } catch(e) {
+    setLoginStatus('Error: ' + e.message, 'error');
+  }
+}
+
+function setLoginStatus(msg, type) {
+  const el = document.getElementById('login-status');
+  el.textContent = msg;
+  el.className = 'login-status' + (type ? ' '+type : '');
 }
 
 function goLogin() {
   currentCamper = null;
+  sessionAnswers = {};
+  nfcInput.value = '';
+  setLoginStatus('Ready for card scan…', '');
   showPage('page-login');
-  const statusEl = document.getElementById('login-status');
-  statusEl.textContent = 'Ready for card scan…';
-  statusEl.className = 'login-status';
-  nfcBuffer = '';
   setTimeout(() => nfcInput.focus(), 100);
 }
-function goAdmin() {
-  showPage('page-admin');
-  renderCampersTable();
-  renderQuestionsEditor();
-  renderReport();
-  loadThreshold();
-}
 
-/* ═══════════════════════════════════════════════════
+/* ════════════════════════════════
    DASHBOARD
-═══════════════════════════════════════════════════ */
+════════════════════════════════ */
 function loadDashboard() {
-  const camper = camperById(currentCamper);
-  if (!camper) { goLogin(); return; }
+  const c = currentCamper;
+  if (!c) { goLogin(); return; }
 
   showPage('page-dashboard');
-  document.getElementById('dash-name').textContent = `${camper.firstName} ${camper.lastName}`;
-  document.getElementById('dash-score').textContent = calcTotalPoints(camper);
+  document.getElementById('dash-name').textContent = `${c.first_name} ${c.last_name}`;
+  document.getElementById('dash-score').textContent = calcCamperPoints(c);
   document.getElementById('dash-date-label').textContent = formatDateLabel(todayKey());
 
-  const dk = todayKey();
-  const todayData = camper.days?.[dk];
-  const alreadySubmitted = todayData?.submitted;
+  const dk    = todayKey();
+  const today = (c.days || {})[dk];
+  const done  = today?.submitted;
 
-  showEl('already-submitted-banner', alreadySubmitted);
-  document.getElementById('submit-btn').disabled = alreadySubmitted;
-  document.getElementById('submit-btn').style.opacity = alreadySubmitted ? 0.4 : 1;
+  document.getElementById('dash-submitted-note').style.display = done ? '' : 'none';
+  document.getElementById('submit-btn').disabled = !!done;
+  document.getElementById('submit-btn').style.opacity = done ? 0.4 : 1;
 
-  // Build checklist
-  const container = document.getElementById('checklist-items');
-  container.innerHTML = '';
-  db.questions.forEach((q, i) => {
-    const saved = todayData?.answers?.[i];
-    const disabled = alreadySubmitted;
-    const item = document.createElement('div');
-    item.className = 'checklist-item';
-    item.innerHTML = `
-      <div class="checklist-num">${i+1}</div>
-      <div class="checklist-q">${q.text}</div>
-      <div class="checklist-pts">+${q.pts} pts</div>
-      <div class="toggle-wrap">
-        <button class="toggle-btn yes ${saved===true?'active':''}" 
-          data-idx="${i}" data-val="yes"
-          onclick="${disabled?'':'toggleAnswer('+i+',true)'}" 
-          ${disabled?'disabled':''}>Yes</button>
-        <button class="toggle-btn no ${saved===false?'active':''}"
-          data-idx="${i}" data-val="no"
-          onclick="${disabled?'':'toggleAnswer('+i+',false)'}"
-          ${disabled?'disabled':''}>No</button>
-      </div>
-    `;
-    container.appendChild(item);
-  });
-}
-
-// Temporary in-session answers (not yet saved)
-let sessionAnswers = {};
-
-function toggleAnswer(idx, val) {
-  sessionAnswers[idx] = val;
-  const items = document.querySelectorAll('.checklist-item');
-  const item = items[idx];
-  if (!item) return;
-  item.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
-  const target = item.querySelector(`.toggle-btn.${val?'yes':'no'}`);
-  if (target) target.classList.add('active');
-}
-
-function submitDuch() {
-  const camper = camperById(currentCamper);
-  if (!camper) return;
-  const dk = todayKey();
-  if (!camper.days) camper.days = {};
-  const answers = db.questions.map((_, i) => sessionAnswers[i] === true ? true : false);
-  camper.days[dk] = { answers, submitted: true };
-  if (camper.pointsOverride != null) delete camper.pointsOverride; // recalc
-  db.save(db);
-
-  // Calculate pts earned today
-  let todayPts = 0;
-  answers.forEach((a, i) => { if (a && db.questions[i]) todayPts += db.questions[i].pts; });
-  const total = calcTotalPoints(camper);
-
-  const modal = document.getElementById('submit-modal');
-  document.getElementById('modal-pts-msg').textContent = `+${todayPts} pts today · Total: ${total} pts`;
-  modal.classList.add('active');
   sessionAnswers = {};
+  const wrap = document.getElementById('checklist-wrap');
+  wrap.innerHTML = appQuestions.map((q, i) => {
+    const saved = today?.answers?.[i];
+    return `
+      <div class="checklist-row">
+        <div class="cl-num">${i+1}</div>
+        <div class="cl-text">${q.text}</div>
+        <div class="cl-pts">+${q.pts}</div>
+        <div class="toggle-group">
+          <button class="tgl yes ${saved===true?'active':''}" onclick="${done?'':'toggleAns('+i+',true,this)'}" ${done?'disabled':''}>Yes</button>
+          <button class="tgl no  ${saved===false?'active':''}" onclick="${done?'':'toggleAns('+i+',false,this)'}" ${done?'disabled':''}>No</button>
+        </div>
+      </div>`;
+  }).join('');
+}
 
+function toggleAns(idx, val, btn) {
+  sessionAnswers[idx] = val;
+  const row = btn.closest('.checklist-row');
+  row.querySelectorAll('.tgl').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+async function submitDuch() {
+  const c = currentCamper;
+  if (!c) return;
+  const dk = todayKey();
+  const answers = appQuestions.map((_, i) => sessionAnswers[i] === true);
+  let todayPts = 0;
+  answers.forEach((a, i) => { if (a && appQuestions[i]) todayPts += appQuestions[i].pts; });
+
+  const newDays = { ...(c.days || {}), [dk]: { answers, submitted: true } };
+  try {
+    await dbUpdateCamper(c.id, { days: newDays });
+  } catch(e) { /* save locally anyway */ }
+  c.days = newDays;
+  // Update cached points
+  if (!supabaseConfigured()) {
+    c.total_points = calcLocalTotalPoints(c);
+  }
+  const total = calcCamperPoints(c);
+  document.getElementById('modal-msg').textContent = `+${todayPts} pts today · Total: ${total} pts`;
+  document.getElementById('submit-modal').classList.add('show');
+  sessionAnswers = {};
   setTimeout(() => {
-    modal.classList.remove('active');
+    document.getElementById('submit-modal').classList.remove('show');
     goLogin();
   }, 2200);
 }
 
-/* ═══════════════════════════════════════════════════
-   ADMIN: CAMPERS
-═══════════════════════════════════════════════════ */
-function renderCampersTable() {
-  const tbody = document.getElementById('campers-table-body');
-  if (!tbody) return;
-  if (db.campers.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="4"><div class="empty-state">No campers yet. Add one above.</div></td></tr>';
-    return;
-  }
-  tbody.innerHTML = db.campers.map(c => `
-    <tr>
-      <td><strong>${c.firstName} ${c.lastName}</strong></td>
-      <td>${c.nfcId ? `<span class="nfc-id-display">${c.nfcId}</span>` : '<span style="color:#aaa;font-size:12px;">Not assigned</span>'}</td>
-      <td><span class="badge badge-gold">${calcTotalPoints(c)} pts</span></td>
-      <td style="display:flex;gap:6px;flex-wrap:wrap;">
-        <button class="btn btn-ghost btn-sm" onclick="openCamperProfile(${c.id})">Edit</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteCamper(${c.id})">Delete</button>
-      </td>
-    </tr>
-  `).join('');
+/* ════════════════════════════════
+   ADMIN LOGIN
+════════════════════════════════ */
+function goAdminLogin() {
+  document.getElementById('admin-pw-input').value = '';
+  document.getElementById('admin-login-err').textContent = '';
+  showPage('page-admin-login');
+  setTimeout(() => document.getElementById('admin-pw-input').focus(), 100);
 }
 
-function addCamper() {
+document.getElementById('admin-pw-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') attemptAdminLogin();
+});
+
+async function attemptAdminLogin() {
+  const pw = document.getElementById('admin-pw-input').value;
+  const errEl = document.getElementById('admin-login-err');
+  errEl.textContent = '';
+  try {
+    const settings = await dbGetSettings();
+    const correct = settings.admin_password || ADMIN_PASSWORD_FALLBACK;
+    if (pw === correct) {
+      adminAuthed = true;
+      loadAdminDashboard();
+    } else {
+      errEl.textContent = 'Incorrect password.';
+      document.getElementById('admin-pw-input').select();
+    }
+  } catch(e) {
+    errEl.textContent = 'Error checking password: ' + e.message;
+  }
+}
+
+function adminLogout() {
+  adminAuthed = false;
+  goLogin();
+}
+
+/* ════════════════════════════════
+   ADMIN DASHBOARD
+════════════════════════════════ */
+async function loadAdminDashboard() {
+  showPage('page-admin');
+  switchAdminPanel('campers');
+}
+
+function switchAdminPanel(name) {
+  ['campers','config','events','report'].forEach(p => {
+    document.getElementById(`admin-panel-${p}`).style.display = 'none';
+    document.getElementById(`nav-${p}`)?.classList.remove('active');
+  });
+  document.getElementById(`admin-panel-${name}`).style.display = '';
+  document.getElementById(`nav-${name}`)?.classList.add('active');
+  if (name === 'campers')  { loadCampersPanel(); }
+  if (name === 'config')   { loadConfigPanel(); }
+  if (name === 'events')   { loadEventsPanel(); }
+  if (name === 'report')   { loadReportPanel(); }
+}
+
+/* ──── CAMPERS PANEL ──── */
+async function loadCampersPanel() {
+  try {
+    appCampers = await dbGetCampers();
+  } catch(e) { appCampers = []; }
+  renderCampersTable();
+}
+
+function renderCampersTable() {
+  const search = (document.getElementById('camper-search')?.value || '').toLowerCase();
+  const tbody  = document.getElementById('campers-tbody');
+  if (!tbody) return;
+
+  const filtered = appCampers.filter(c => {
+    const full = `${c.first_name} ${c.last_name} ${c.nfc_id||''}`.toLowerCase();
+    return !search || full.includes(search);
+  });
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="4"><div class="empty">${search ? 'No results.' : 'No campers yet.'}</div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = filtered.map(c => `
+    <tr>
+      <td><strong>${c.first_name} ${c.last_name}</strong></td>
+      <td>${c.nfc_id ? `<span class="mono">${c.nfc_id}</span>` : '<span style="color:var(--text-3);font-size:12px;">—</span>'}</td>
+      <td><span class="badge badge-gold">${calcCamperPoints(c)} pts</span></td>
+      <td>
+        <button class="btn btn-ghost btn-sm" onclick="openCamperProfile(${c.id})">Edit</button>
+        <button class="btn btn-danger btn-sm" style="margin-left:4px;" onclick="deleteCamper(${c.id})">Del</button>
+      </td>
+    </tr>`).join('');
+}
+
+async function addCamper() {
   const first = document.getElementById('add-first').value.trim();
   const last  = document.getElementById('add-last').value.trim();
   const nfc   = document.getElementById('add-nfc').value.trim();
-  if (!first || !last) { flashMsg('add-camper-msg','Please enter first and last name.','error'); return; }
-  if (nfc && db.campers.find(c => c.nfcId && c.nfcId.toLowerCase() === nfc.toLowerCase())) {
-    flashMsg('add-camper-msg','That NFC ID is already assigned to another camper.','error'); return;
-  }
-  db.campers.push({ id: db.nextId++, firstName: first, lastName: last, nfcId: nfc||'', days: {} });
-  DB.save(db);
-  document.getElementById('add-first').value = '';
-  document.getElementById('add-last').value = '';
-  document.getElementById('add-nfc').value = '';
-  flashMsg('add-camper-msg', `${first} ${last} added!`, 'success');
-  renderCampersTable();
+  if (!first || !last) { flashMsg('add-camper-msg','Enter first and last name.','error'); return; }
+  try {
+    const c = await dbAddCamper(first, last, nfc);
+    appCampers.push({ ...c, first_name:first, last_name:last, nfc_id:nfc||'', days:{}, points_override:null, total_points:0 });
+    ['add-first','add-last','add-nfc'].forEach(id => document.getElementById(id).value = '');
+    flashMsg('add-camper-msg', `${first} ${last} added!`, 'success');
+    renderCampersTable();
+  } catch(e) { flashMsg('add-camper-msg', e.message, 'error'); }
 }
 
-function deleteCamper(id) {
-  const c = camperById(id);
-  if (!c) return;
-  if (!confirm(`Delete ${c.firstName} ${c.lastName}? This cannot be undone.`)) return;
-  db.campers = db.campers.filter(x => x.id !== id);
-  DB.save(db);
-  renderCampersTable();
+async function deleteCamper(id) {
+  const c = appCampers.find(x => x.id === id);
+  if (!c || !confirm(`Delete ${c.first_name} ${c.last_name}?`)) return;
+  try {
+    await dbDeleteCamper(id);
+    appCampers = appCampers.filter(x => x.id !== id);
+    renderCampersTable();
+  } catch(e) { alert('Error: ' + e.message); }
 }
 
 function openCamperProfile(id) {
-  editingCamperId = id;
-  const c = camperById(id);
+  editCamperId = id;
+  const c = appCampers.find(x => x.id === id);
   if (!c) return;
-  document.getElementById('profile-title').textContent = `${c.firstName} ${c.lastName}`;
-  document.getElementById('profile-first').value = c.firstName;
-  document.getElementById('profile-last').value  = c.lastName;
-  document.getElementById('profile-nfc').value   = c.nfcId || '';
-  document.getElementById('total-pts-override').value = calcTotalPoints(c);
-  showEl('admin-campers-list', false);
-  showEl('admin-camper-profile', true);
-  renderDaysGrid(c);
+  document.getElementById('profile-card-title').textContent = `${c.first_name} ${c.last_name}`;
+  document.getElementById('prof-first').value = c.first_name;
+  document.getElementById('prof-last').value  = c.last_name;
+  document.getElementById('prof-nfc').value   = c.nfc_id || '';
+  document.getElementById('total-pts-input').value = calcCamperPoints(c);
+  document.getElementById('view-campers-list').style.display = 'none';
+  document.getElementById('view-camper-profile').style.display = '';
+  renderDayGrid(c);
   closeDayEditor();
 }
 
 function closeCamperProfile() {
-  editingCamperId = null;
-  showEl('admin-campers-list', true);
-  showEl('admin-camper-profile', false);
+  editCamperId = null;
+  document.getElementById('view-campers-list').style.display = '';
+  document.getElementById('view-camper-profile').style.display = 'none';
   renderCampersTable();
 }
 
-function saveProfile() {
-  const c = camperById(editingCamperId);
+async function saveProfile() {
+  const c = appCampers.find(x => x.id === editCamperId);
   if (!c) return;
-  const nfc = document.getElementById('profile-nfc').value.trim();
-  if (nfc && db.campers.find(x => x.id !== c.id && x.nfcId && x.nfcId.toLowerCase() === nfc.toLowerCase())) {
-    flashMsg('profile-save-msg','That NFC ID is assigned to another camper.','error'); return;
+  const nfc = document.getElementById('prof-nfc').value.trim();
+  const first = document.getElementById('prof-first').value.trim();
+  const last  = document.getElementById('prof-last').value.trim();
+  if (nfc && appCampers.find(x => x.id !== c.id && x.nfc_id && x.nfc_id.toLowerCase() === nfc.toLowerCase())) {
+    flashMsg('prof-save-msg','NFC ID already assigned to another camper.','error'); return;
   }
-  c.firstName = document.getElementById('profile-first').value.trim() || c.firstName;
-  c.lastName  = document.getElementById('profile-last').value.trim()  || c.lastName;
-  c.nfcId     = nfc;
-  DB.save(db);
-  document.getElementById('profile-title').textContent = `${c.firstName} ${c.lastName}`;
-  flashMsg('profile-save-msg','Saved!','success');
+  try {
+    await dbUpdateCamper(c.id, { first_name:first, last_name:last, nfc_id:nfc });
+    c.first_name = first; c.last_name = last; c.nfc_id = nfc;
+    document.getElementById('profile-card-title').textContent = `${first} ${last}`;
+    flashMsg('prof-save-msg','Saved!','success');
+  } catch(e) { flashMsg('prof-save-msg', e.message, 'error'); }
 }
 
-function saveTotalOverride() {
-  const c = camperById(editingCamperId);
+async function saveTotalOverride() {
+  const c = appCampers.find(x => x.id === editCamperId);
   if (!c) return;
-  const val = parseInt(document.getElementById('total-pts-override').value);
-  if (isNaN(val) || val < 0) { flashMsg('total-override-msg','Enter a valid point value.','error'); return; }
-  c.pointsOverride = val;
-  DB.save(db);
-  flashMsg('total-override-msg', `Total points set to ${val}.`, 'success');
+  const val = parseInt(document.getElementById('total-pts-input').value);
+  if (isNaN(val)) { flashMsg('override-msg','Invalid value.','error'); return; }
+  try {
+    await dbUpdateCamper(c.id, { points_override: val });
+    c.points_override = val;
+    flashMsg('override-msg', `Total set to ${val} pts.`, 'success');
+  } catch(e) { flashMsg('override-msg', e.message, 'error'); }
 }
 
-function renderDaysGrid(c) {
-  const grid = document.getElementById('profile-days-grid');
-  if (!grid) return;
+function renderDayGrid(c) {
+  const grid = document.getElementById('day-grid');
   const days = Object.keys(c.days || {}).sort().reverse();
   if (days.length === 0) {
-    grid.innerHTML = '<div class="empty-state" style="padding:16px;">No submissions yet.</div>';
+    grid.innerHTML = '<div class="empty">No submissions yet.</div>';
     return;
   }
   grid.innerHTML = days.map(dk => {
-    const d = c.days[dk];
-    const pts = calcDayPoints(c, dk);
-    return `
-      <div class="day-cell" onclick="openDayEditor('${dk}')">
-        <div class="day-cell-date">${formatDateLabel(dk)}</div>
-        <div class="day-cell-pts">${pts} pts</div>
-        <div class="day-cell-sub">${d.submitted ? 'Submitted' : 'Partial'} · click to edit</div>
-      </div>`;
+    const day = c.days[dk];
+    const pts = day.override != null ? day.override : (() => {
+      let p = 0;
+      (day.answers||[]).forEach((a,i) => { if(a && appQuestions[i]) p += appQuestions[i].pts; });
+      return p;
+    })();
+    return `<div class="day-tile" onclick="openDayEditor('${dk}')">
+      <div class="day-tile-date">${formatDateLabel(dk)}</div>
+      <div class="day-tile-pts">${pts} pts</div>
+      <div class="day-tile-sub">${day.submitted ? 'Submitted' : 'Draft'} · tap to edit</div>
+    </div>`;
   }).join('');
 }
 
 function openDayEditor(dk) {
-  editingDayKey = dk;
-  const c = camperById(editingCamperId);
+  editDayKey = dk;
+  const c = appCampers.find(x => x.id === editCamperId);
   if (!c) return;
+  const day = (c.days || {})[dk] || {};
   document.getElementById('day-editor-title').textContent = `Edit: ${formatDateLabel(dk)}`;
-  const day = c.days?.[dk] || {};
-  document.getElementById('day-pts-override').value = day.override != null ? day.override : '';
-  const grid = document.getElementById('day-ans-grid');
-  grid.innerHTML = db.questions.map((q, i) => {
+  document.getElementById('day-pts-ov').value = day.override != null ? day.override : '';
+  document.getElementById('day-ans-grid').innerHTML = appQuestions.map((q,i) => {
     const ans = day.answers?.[i];
-    return `
-      <div class="ans-row">
-        <div class="ans-q"><strong>${i+1}.</strong> ${q.text} <small style="color:#888;">(+${q.pts})</small></div>
-        <div class="ans-toggle">
-          <button class="ans-btn yes ${ans===true?'active':''}" onclick="toggleAnsEdit(${i},true,this)">Yes</button>
-          <button class="ans-btn no  ${ans===false?'active':''}" onclick="toggleAnsEdit(${i},false,this)">No</button>
-        </div>
-      </div>`;
+    return `<div class="ans-row">
+      <div class="ans-q"><strong>${i+1}.</strong> ${q.text} <span class="txt-sm">(+${q.pts})</span></div>
+      <div class="ans-toggle">
+        <button class="ans-btn yes ${ans===true?'active':''}" onclick="toggleAnsEdit(${i},true,this)">Yes</button>
+        <button class="ans-btn no  ${ans===false?'active':''}" onclick="toggleAnsEdit(${i},false,this)">No</button>
+      </div>
+    </div>`;
   }).join('');
-  showEl('profile-day-editor', true);
-  document.getElementById('profile-day-editor').scrollIntoView({behavior:'smooth'});
+  document.getElementById('day-editor-wrap').style.display = '';
+  document.getElementById('day-editor-wrap').scrollIntoView({ behavior:'smooth' });
 }
 
 function toggleAnsEdit(idx, val, btn) {
-  const row = btn.closest('.ans-toggle');
-  row.querySelectorAll('.ans-btn').forEach(b => b.classList.remove('active'));
+  btn.closest('.ans-toggle').querySelectorAll('.ans-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
 }
 
-function saveDayEdit() {
-  const c = camperById(editingCamperId);
-  if (!c || !editingDayKey) return;
+async function saveDayEdit() {
+  const c = appCampers.find(x => x.id === editCamperId);
+  if (!c || !editDayKey) return;
   if (!c.days) c.days = {};
-  if (!c.days[editingDayKey]) c.days[editingDayKey] = { answers: [], submitted: true };
-  const day = c.days[editingDayKey];
-  // Read answers
+  if (!c.days[editDayKey]) c.days[editDayKey] = { answers:[], submitted:true };
+  const day = c.days[editDayKey];
   const rows = document.querySelectorAll('#day-ans-grid .ans-row');
-  day.answers = Array.from(rows).map(row => {
-    const yes = row.querySelector('.ans-btn.yes.active');
-    const no  = row.querySelector('.ans-btn.no.active');
-    return yes ? true : no ? false : null;
-  });
-  // Override
-  const ov = document.getElementById('day-pts-override').value;
+  day.answers = Array.from(rows).map(row => !!row.querySelector('.ans-btn.yes.active'));
+  const ov = document.getElementById('day-pts-ov').value;
   day.override = (ov !== '' && !isNaN(parseInt(ov))) ? parseInt(ov) : undefined;
   if (day.override == null) delete day.override;
-  DB.save(db);
-  flashMsg('day-edit-msg','Day saved!','success');
-  renderDaysGrid(c);
-  // Update total override display
-  document.getElementById('total-pts-override').value = calcTotalPoints(c);
+  try {
+    await dbUpdateCamper(c.id, { days: c.days });
+    flashMsg('day-edit-msg','Day saved!','success');
+    renderDayGrid(c);
+    document.getElementById('total-pts-input').value = calcCamperPoints(c);
+  } catch(e) { flashMsg('day-edit-msg', e.message, 'error'); }
 }
 
 function closeDayEditor() {
-  editingDayKey = null;
-  showEl('profile-day-editor', false);
+  editDayKey = null;
+  document.getElementById('day-editor-wrap').style.display = 'none';
 }
 
-/* ═══════════════════════════════════════════════════
-   ADMIN: QUESTIONS
-═══════════════════════════════════════════════════ */
-function renderQuestionsEditor() {
-  const el = document.getElementById('questions-editor');
-  if (!el) return;
-  el.innerHTML = db.questions.map((q, i) => `
-    <div class="question-row">
-      <div class="q-num">${i+1}</div>
-      <input type="text" class="q-text" data-idx="${i}" value="${q.text.replace(/"/g,'&quot;')}" placeholder="Question ${i+1}">
-      <input type="number" class="q-pts" data-idx="${i}" value="${q.pts}" min="0" title="Points for Yes">
-      <span style="font-size:12px;color:#888;">pts</span>
-    </div>
-  `).join('');
+/* ──── CONFIG PANEL ──── */
+async function loadConfigPanel() {
+  try {
+    appSettings  = await dbGetSettings();
+    appQuestions = await dbGetQuestions();
+  } catch{}
+  document.getElementById('threshold-input').value = appSettings.threshold;
+  renderQEditor();
 }
 
-function saveQuestions() {
-  const rows = document.querySelectorAll('#questions-editor .question-row');
-  rows.forEach((row, i) => {
-    const text = row.querySelector('.q-text').value.trim();
-    const pts  = parseInt(row.querySelector('.q-pts').value) || 0;
-    if (db.questions[i]) { db.questions[i].text = text; db.questions[i].pts = pts; }
-  });
-  DB.save(db);
-  flashMsg('questions-msg','Questions saved!','success');
+function renderQEditor() {
+  document.getElementById('q-editor').innerHTML = appQuestions.map((q,i) => `
+    <div class="q-editor-row">
+      <div class="q-num-bubble">${i+1}</div>
+      <input class="f-input" style="flex:1;" data-qi="${i}" placeholder="Question ${i+1}" value="${escHtml(q.text)}">
+      <input type="number" class="f-input f-input-sm" data-qp="${i}" value="${q.pts}" min="0" style="max-width:68px;">
+      <span class="txt-sm" style="white-space:nowrap;flex-shrink:0;">pts</span>
+    </div>`).join('');
 }
 
-function loadThreshold() {
-  const el = document.getElementById('threshold-input');
-  if (el) el.value = db.threshold;
-}
-
-function saveThreshold() {
+async function saveThreshold() {
   const val = parseInt(document.getElementById('threshold-input').value);
-  if (isNaN(val) || val < 0) { flashMsg('threshold-msg','Enter a valid number.','error'); return; }
-  db.threshold = val;
-  DB.save(db);
-  flashMsg('threshold-msg', `Threshold set to ${val} points.`,'success');
-  renderReport();
+  if (isNaN(val)) { flashMsg('threshold-msg','Enter a number.','error'); return; }
+  try {
+    await dbSetSetting('threshold', val);
+    appSettings.threshold = val;
+    flashMsg('threshold-msg', `Threshold set to ${val} pts.`, 'success');
+  } catch(e) { flashMsg('threshold-msg', e.message, 'error'); }
 }
 
-/* ═══════════════════════════════════════════════════
-   ADMIN: REPORT
-═══════════════════════════════════════════════════ */
-function renderReport() {
-  const el = document.getElementById('report-split');
-  const label = document.getElementById('report-threshold-label');
-  if (!el) return;
-  const threshold = db.threshold;
-  if (label) label.textContent = `Weekly Event Report — Threshold: ${threshold} pts`;
+async function saveQuestions() {
+  const rows = document.querySelectorAll('#q-editor .q-editor-row');
+  rows.forEach((row,i) => {
+    const t = row.querySelector(`[data-qi="${i}"]`).value.trim();
+    const p = parseInt(row.querySelector(`[data-qp="${i}"]`).value) || 0;
+    if (appQuestions[i]) { appQuestions[i].text = t; appQuestions[i].pts = p; }
+  });
+  try {
+    await dbSaveQuestions(appQuestions);
+    flashMsg('q-msg','Questions saved!','success');
+  } catch(e) { flashMsg('q-msg', e.message, 'error'); }
+}
 
-  const eligible   = db.campers.filter(c => calcTotalPoints(c) >= threshold).sort((a,b) => calcTotalPoints(b) - calcTotalPoints(a));
-  const ineligible = db.campers.filter(c => calcTotalPoints(c) <  threshold).sort((a,b) => calcTotalPoints(b) - calcTotalPoints(a));
+/* ──── EVENTS PANEL ──── */
+async function loadEventsPanel() {
+  try { appEvents = await dbGetEvents(); } catch{}
+  document.getElementById('evt-type').onchange = updateEvtTypeUI;
+  updateEvtTypeUI();
+  renderEventsList();
+}
 
-  const renderList = (title, campers, cls) => `
-    <div class="report-list">
-      <div class="report-list-header ${cls}">
-        <span>${cls === 'eligible' ? '✅' : '⛔'}</span>
-        <span>${title} (${campers.length})</span>
-      </div>
-      <div class="report-list-body">
-        ${campers.length === 0 ? '<div class="empty-state">None</div>' :
-          campers.map(c => `
-            <div class="report-item">
-              <span>${c.firstName} ${c.lastName}</span>
-              <span class="report-item-pts">${calcTotalPoints(c)} pts</span>
-            </div>`).join('')
-        }
+function updateEvtTypeUI() {
+  const type = document.getElementById('evt-type').value;
+  document.getElementById('evt-topn-wrap').style.display = type === 'top_n' ? '' : 'none';
+}
+
+async function addEvent() {
+  const name  = document.getElementById('evt-name').value.trim();
+  const pts   = parseInt(document.getElementById('evt-pts').value) || 0;
+  const type  = document.getElementById('evt-type').value;
+  const topn  = parseInt(document.getElementById('evt-topn').value) || 10;
+  const date  = document.getElementById('evt-date').value;
+  const notes = document.getElementById('evt-notes').value.trim();
+  if (!name) { flashMsg('evt-msg','Enter an event name.','error'); return; }
+  try {
+    const evt = await dbAddEvent({ name, min_points:pts, type, top_n:topn, date:date||null, notes });
+    appEvents.unshift(evt);
+    ['evt-name','evt-pts','evt-topn','evt-date','evt-notes'].forEach(id => document.getElementById(id).value='');
+    flashMsg('evt-msg','Event created!','success');
+    renderEventsList();
+  } catch(e) { flashMsg('evt-msg', e.message, 'error'); }
+}
+
+function renderEventsList() {
+  const el = document.getElementById('events-list');
+  if (appEvents.length === 0) {
+    el.innerHTML = '<div class="empty">No events yet.</div>';
+    return;
+  }
+  el.innerHTML = appEvents.map(e => {
+    const eligLabel = e.type === 'all' ? 'All campers' :
+                      e.type === 'top_n' ? `Top ${e.top_n} campers` :
+                      `≥ ${e.min_points} pts`;
+    return `<div class="event-card">
+      <div class="event-card-header">
+        <div>
+          <div class="event-name">${escHtml(e.name)}</div>
+          <div class="event-type">${e.date ? '📅 '+e.date : ''} ${e.notes ? '· '+escHtml(e.notes) : ''}</div>
+        </div>
+        <div class="event-actions">
+          <span class="eligibility-tag ${e.type==='all'?'green':''}">${eligLabel}</span>
+          <button class="btn btn-danger btn-sm" onclick="deleteEvent(${e.id})">Del</button>
+        </div>
       </div>
     </div>`;
-
-  el.innerHTML =
-    renderList('Eligible for Event', eligible,   'eligible') +
-    renderList('Not Eligible',        ineligible, 'ineligible');
+  }).join('');
 }
 
-/* ═══════════════════════════════════════════════════
-   ADMIN: NAV
-═══════════════════════════════════════════════════ */
-function switchPanel(panelId, tab) {
-  document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
-  tab.classList.add('active');
-  document.querySelectorAll('.admin-panel').forEach(p => p.classList.remove('active'));
-  document.getElementById('panel-' + panelId)?.classList.add('active');
-  if (panelId === 'report') renderReport();
-  if (panelId === 'questions') { renderQuestionsEditor(); loadThreshold(); }
-  if (panelId === 'campers') renderCampersTable();
+async function deleteEvent(id) {
+  if (!confirm('Delete this event?')) return;
+  try {
+    await dbDeleteEvent(id);
+    appEvents = appEvents.filter(e => e.id !== id);
+    renderEventsList();
+  } catch(e) { alert('Error: '+e.message); }
 }
 
-/* ═══════════════════════════════════════════════════
-   NFC INPUT FOCUS — keep the login input focused
-   for tablet use even when tapping display elements
-═══════════════════════════════════════════════════ */
-document.addEventListener('focusout', () => {
-  if (document.getElementById('page-login').classList.contains('active')) {
-    setTimeout(() => nfcInput.focus(), 50);
-  }
-});
+/* ──── REPORT PANEL ──── */
+async function loadReportPanel() {
+  try {
+    appCampers  = await dbGetCampers();
+    appEvents   = await dbGetEvents();
+    appSettings = await dbGetSettings();
+  } catch{}
 
-// Allow admins to manually type an NFC ID for testing
-// On admin page, add-nfc and profile-nfc fields capture the scan
-document.getElementById('add-nfc').addEventListener('focus', () => { /* let it be */ });
+  const thresh = appSettings.threshold;
+  document.getElementById('report-title').textContent = `Weekly Report — Threshold: ${thresh} pts`;
+  const elig   = appCampers.filter(c => calcCamperPoints(c) >= thresh).sort((a,b)=>calcCamperPoints(b)-calcCamperPoints(a));
+  const inelig = appCampers.filter(c => calcCamperPoints(c) <  thresh).sort((a,b)=>calcCamperPoints(b)-calcCamperPoints(a));
 
-// On profile page, wire NFC scan to the focused NFC field
-nfcInput.addEventListener('input', () => { nfcInput.value = ''; });
+  document.getElementById('report-cols').innerHTML = renderReportList('Eligible',     elig,  'elig') +
+                                                      renderReportList('Not Eligible', inelig,'inelig');
 
+  // Per-event reports
+  const evtReports = document.getElementById('event-reports');
+  if (appEvents.length === 0) { evtReports.innerHTML = ''; return; }
+  evtReports.innerHTML = appEvents.map(e => {
+    let included, excluded;
+    if (e.type === 'all') {
+      included = [...appCampers]; excluded = [];
+    } else if (e.type === 'top_n') {
+      const sorted = [...appCampers].sort((a,b)=>calcCamperPoints(b)-calcCamperPoints(a));
+      included = sorted.slice(0, e.top_n || 10);
+      excluded = sorted.slice(e.top_n || 10);
+    } else {
+      included = appCampers.filter(c => calcCamperPoints(c) >= (e.min_points||0)).sort((a,b)=>calcCamperPoints(b)-calcCamperPoints(a));
+      excluded = appCampers.filter(c => calcCamperPoints(c) <  (e.min_points||0)).sort((a,b)=>calcCamperPoints(b)-calcCamperPoints(a));
+    }
+    return `<div class="a-card">
+      <div class="a-card-title">🎉 ${escHtml(e.name)} ${e.date?'· '+e.date:''}</div>
+      <div class="report-cols">
+        ${renderReportList('Going', included,'elig')}
+        ${e.type==='all'?'':renderReportList('Not Going', excluded,'inelig')}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderReportList(title, campers, cls) {
+  return `<div class="report-list">
+    <div class="report-list-hdr ${cls}">${cls==='elig'?'✅':'⛔'} ${title} (${campers.length})</div>
+    <div class="report-list-body">
+      ${campers.length===0 ? '<div class="empty">None</div>' :
+        campers.map(c=>`<div class="report-row"><span>${c.first_name} ${c.last_name}</span><span class="report-pts">${calcCamperPoints(c)} pts</span></div>`).join('')}
+    </div>
+  </div>`;
+}
+
+/* ════════════════════════════════
+   UTILS
+════════════════════════════════ */
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById(id)?.classList.add('active');
+}
+function todayKey() {
+  const d = new Date();
+  return [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-');
+}
+function formatDateLabel(k) {
+  if (!k) return '';
+  const [y,m,d] = k.split('-').map(Number);
+  return new Date(y,m-1,d).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+}
+function flashMsg(id, msg, type='success') {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = `<div class="alert alert-${type}">${msg}</div>`;
+  setTimeout(() => { if(el) el.innerHTML=''; }, 3500);
+}
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ════════════════════════════════
+   BOOT
+════════════════════════════════ */
+document.addEventListener('DOMContentLoaded', boot);
 </script>
 </body>
 </html>
