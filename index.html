@@ -161,8 +161,8 @@
     <div id="root"></div>
 
     <script id="app-source" type="text/plain">
-      import React, { useEffect, useMemo, useRef, useState } from 'https://esm.sh/react@18.3.1';
-      import { createRoot } from 'https://esm.sh/react-dom@18.3.1/client';
+      import React, { useEffect, useMemo, useRef, useState } from 'https://esm.sh/react@18.3.1?dev';
+      import { createRoot } from 'https://esm.sh/react-dom@18.3.1/client?dev';
       import {
         Award,
         BadgeCheck,
@@ -246,6 +246,25 @@
 
       function classNames(...parts) {
         return parts.filter(Boolean).join(' ');
+      }
+
+      // Supabase can hand back a JSON/object value for a column we expect to be
+      // a plain string or number (e.g. a jsonb column, or a row shape that
+      // doesn't match what the UI assumes). Rendering an object directly as a
+      // React child throws "Objects are not valid as a React child" (error
+      // #31) and blanks the whole page. This guards every spot that renders a
+      // raw Supabase field so a stray object degrades gracefully instead of
+      // crashing.
+      function displayValue(value) {
+        if (value === null || value === undefined) return '';
+        if (typeof value === 'object') {
+          try {
+            return JSON.stringify(value);
+          } catch (stringifyError) {
+            return String(value);
+          }
+        }
+        return value;
       }
 
       function normalizeStatus(status) {
@@ -528,7 +547,7 @@
               <Icon size={16} />
               <span className="text-xs font-bold uppercase tracking-[0.12em]">{label}</span>
             </div>
-            <p className="text-2xl font-extrabold">{value ?? 0}</p>
+            <p className="text-2xl font-extrabold">{displayValue(value) || displayValue(0)}</p>
           </div>
         );
       }
@@ -772,10 +791,10 @@
                         <tr key={camper.id} className="border-t line-border">
                           <td className="px-4 py-3 font-bold">{camper.name}</td>
                           <td className="px-4 py-3">{camper.nfc_id}</td>
-                          <td className="px-4 py-3">{camper.card_status}</td>
-                          <td className="px-4 py-3">{camper.weekly_points}</td>
-                          <td className="px-4 py-3">{camper.total_points}</td>
-                          <td className="px-4 py-3">{camper.weekly_event_status}</td>
+                          <td className="px-4 py-3">{displayValue(camper.card_status)}</td>
+                          <td className="px-4 py-3">{displayValue(camper.weekly_points)}</td>
+                          <td className="px-4 py-3">{displayValue(camper.total_points)}</td>
+                          <td className="px-4 py-3">{displayValue(camper.weekly_event_status)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -855,7 +874,7 @@
               {campers.map((camper) => (
                 <div key={camper.id} className="flex items-center justify-between rounded border line-border px-3 py-2">
                   <span className="font-bold">{camper.name}</span>
-                  <span className="muted-text text-sm font-semibold">{camper.weekly_points} pts</span>
+                  <span className="muted-text text-sm font-semibold">{displayValue(camper.weekly_points)} pts</span>
                 </div>
               ))}
             </div>
