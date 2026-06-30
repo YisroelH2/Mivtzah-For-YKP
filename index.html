@@ -159,7 +159,7 @@
   <body>
     <div id="root"></div>
 
-    <script type="text/babel" data-type="module">
+    <script type="text/babel" data-type="module" data-presets="react">
       import React, { useEffect, useMemo, useRef, useState } from 'https://esm.sh/react@18.3.1';
       import { createRoot } from 'https://esm.sh/react-dom@18.3.1/client';
       import {
@@ -187,6 +187,10 @@
         X,
       } from 'https://esm.sh/lucide-react@0.468.0';
       import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
+
+      // Canonical Supabase table name for camper roster records.
+      // Change this in ONE place if your schema uses a different table name.
+      const CAMPER_TABLE = 'campers';
 
       const dailyFields = {
         learn_maamar: 'Maamar',
@@ -378,7 +382,7 @@
           setError('');
           setNfcMessage('');
           const { data, error: fetchError } = await client
-            .from('camper_profiles')
+            .from(CAMPER_TABLE)
             .select('*')
             .eq('nfc_id', nfcId.trim())
             .maybeSingle();
@@ -676,7 +680,7 @@
         const load = async () => {
           setLoading(true);
           const [{ data: roster }, { data: configRow }] = await Promise.all([
-            client.from('camper_profiles').select('*').order('name'),
+            client.from(CAMPER_TABLE).select('*').order('name'),
             client.from('mivtza_config').select('*').limit(1).maybeSingle(),
           ]);
           setCampers(roster || []);
@@ -693,7 +697,7 @@
         const notEligible = campers.filter((camper) => Number(camper.weekly_points) < Number(rules.standard_event_threshold ?? 400));
 
         const registerCamper = async () => {
-          const { error } = await client.from('campers').insert({ name: newCamper.name.trim(), nfc_id: newCamper.nfc_id.trim() });
+          const { error } = await client.from(CAMPER_TABLE).insert({ name: newCamper.name.trim(), nfc_id: newCamper.nfc_id.trim() });
           setMessage(error ? error.message : 'Camper registered.');
           if (!error) setNewCamper({ name: '', nfc_id: '' });
           load();
@@ -706,7 +710,7 @@
           [...learningKeys, ...hanhagaKeys].forEach((key) => (entryPayload[key] = correction[key]));
           const { error: entryError } = await client.from('daily_entries').upsert(entryPayload, { onConflict: 'camper_id,entry_date' });
           const { error: camperError } = await client
-            .from('campers')
+            .from(CAMPER_TABLE)
             .update({ manual_points_adjustment: Number(correction.manual_points_adjustment || 0) })
             .eq('id', selected.id);
           setMessage(entryError?.message || camperError?.message || 'Correction saved.');
