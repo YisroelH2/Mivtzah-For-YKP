@@ -1,1051 +1,881 @@
 <!doctype html>
-<html lang="en" data-theme="Gold">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>American Express Mivtza</title>
-
-  <!-- Tailwind CSS -->
-  <script src="https://cdn.tailwindcss.com"></script>
-
-  <!-- Lucide Icons -->
-  <script src="https://unpkg.com/lucide@latest"></script>
-
-  <!-- Supabase JS Client -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          fontFamily: {
-            sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"]
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>American Express Mivtza</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              display: ['Inter', 'ui-sans-serif', 'system-ui'],
+              body: ['Inter', 'ui-sans-serif', 'system-ui'],
+            },
+            boxShadow: {
+              luxury: '0 28px 90px rgba(0,0,0,.22)',
+              glow: '0 0 36px rgba(112,190,255,.22)',
+            },
           },
-          boxShadow: {
-            luxury: "0 28px 90px rgba(0,0,0,.22)",
-            glow: "0 0 36px rgba(112,190,255,.22)"
-          }
-        }
-      }
-    };
-  </script>
-
-  <style>
-    @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap");
-
-    :root {
-      --bg: #f8f3e7;
-      --bg-2: #fffdf8;
-      --panel: rgba(255, 255, 255, 0.78);
-      --panel-solid: #ffffff;
-      --text: #282520;
-      --muted: #756e63;
-      --line: rgba(121, 96, 46, 0.2);
-      --accent: #c89c3b;
-      --accent-2: #f1d38b;
-      --accent-soft: rgba(200, 156, 59, 0.16);
-      --card-gradient: linear-gradient(135deg, #fff7df 0%, #e6bf5f 46%, #fff3c6 100%);
-      --luxury-border: linear-gradient(135deg, rgba(246,215,136,.9), rgba(164,117,24,.68), rgba(255,244,204,.92));
-    }
-
-    [data-theme="Platinum"] {
-      --bg: #eef2f6;
-      --bg-2: #ffffff;
-      --panel: rgba(255, 255, 255, 0.72);
-      --panel-solid: #fbfdff;
-      --text: #17202a;
-      --muted: #607080;
-      --line: rgba(90, 111, 132, 0.22);
-      --accent: #6f8498;
-      --accent-2: #94d9ff;
-      --accent-soft: rgba(101, 190, 255, 0.16);
-      --card-gradient: linear-gradient(135deg, #f8fbff 0%, #bdc7d1 28%, #ffffff 48%, #8797a7 100%);
-      --luxury-border: linear-gradient(135deg, rgba(255,255,255,.95), rgba(101,190,255,.66), rgba(113,126,140,.72));
-    }
-
-    [data-theme="Black"] {
-      --bg: #050506;
-      --bg-2: #111214;
-      --panel: rgba(15, 16, 18, 0.84);
-      --panel-solid: #0d0e10;
-      --text: #f6f3ea;
-      --muted: #aaa69c;
-      --line: rgba(255, 255, 255, 0.14);
-      --accent: #d7d1c4;
-      --accent-2: #ffffff;
-      --accent-soft: rgba(255, 255, 255, 0.1);
-      --card-gradient: linear-gradient(135deg, #050506 0%, #191b1f 42%, #050506 100%);
-      --luxury-border: linear-gradient(120deg, #ffffff, #45484f, #f7f2df, #18191d, #ffffff);
-    }
-
-    * { box-sizing: border-box; }
-
-    body {
-      min-height: 100vh;
-      margin: 0;
-      font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-      color: var(--text);
-      background:
-        radial-gradient(circle at top left, var(--accent-soft), transparent 30rem),
-        linear-gradient(140deg, var(--bg), var(--bg-2));
-      transition: background 450ms ease, color 450ms ease;
-    }
-
-    .glass {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      backdrop-filter: blur(18px);
-    }
-
-    .lux-card {
-      position: relative;
-      background: var(--card-gradient);
-      border: 1px solid transparent;
-      color: var(--text);
-    }
-
-    .lux-card::before {
-      content: "";
-      position: absolute;
-      inset: -1px;
-      border-radius: inherit;
-      padding: 1px;
-      background: var(--luxury-border);
-      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-      -webkit-mask-composite: xor;
-      mask-composite: exclude;
-      pointer-events: none;
-    }
-
-    [data-theme="Black"] .lux-card::before {
-      background-size: 280% 280%;
-      animation: cardBorder 5s linear infinite;
-    }
-
-    @keyframes cardBorder {
-      0% { background-position: 0% 50%; }
-      100% { background-position: 280% 50%; }
-    }
-
-    .muted { color: var(--muted); }
-    .accent { color: var(--accent); }
-    .accent-bg { background: var(--accent-soft); }
-    .line-border { border-color: var(--line); }
-
-    .btn {
-      background: var(--text);
-      color: var(--bg-2);
-      border-radius: .5rem;
-      font-weight: 800;
-      transition: transform 150ms ease, opacity 150ms ease;
-    }
-
-    [data-theme="Black"] .btn {
-      background: #f6f3ea;
-      color: #050506;
-    }
-
-    .btn:hover { transform: translateY(-1px); }
-    .btn:disabled { opacity: .5; transform: none; }
-
-    input, select {
-      color: var(--text);
-    }
-
-    option {
-      color: #111827;
-      background: #ffffff;
-    }
-
-    .focusable:focus {
-      outline: 3px solid color-mix(in srgb, var(--accent-2), transparent 50%);
-      outline-offset: 3px;
-    }
-
-    .tile-checked {
-      background: var(--accent-soft);
-      border-color: var(--accent);
-      box-shadow: 0 0 28px rgba(112,190,255,.12);
-    }
-
-    .hidden-scan-input {
-      opacity: .02;
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      pointer-events: none;
-    }
-  </style>
-</head>
-
-<body>
-  <div id="app"></div>
-
-  <script>
-    const learningKeys = [
-      "learn_maamar",
-      "learn_chumash",
-      "learn_tanya",
-      "learn_rambam",
-      "learn_hayom_yom"
-    ];
-
-    const hanhagaKeys = [
-      "hanhaga_negel_vasser",
-      "hanhaga_mikvah",
-      "hanhaga_brochos",
-      "hanhaga_tehillim",
-      "hanhaga_bentching",
-      "hanhaga_bendel"
-    ];
-
-    const fieldLabels = {
-      learn_maamar: "Maamar",
-      learn_chumash: "Chumash",
-      learn_tanya: "Tanya",
-      learn_rambam: "Rambam",
-      learn_hayom_yom: "Hayom Yom",
-      hanhaga_negel_vasser: "Negel Vasser",
-      hanhaga_mikvah: "Mikvah",
-      hanhaga_brochos: "Brochos & Krias Shema",
-      hanhaga_tehillim: "Tehillim",
-      hanhaga_bentching: "Bentching",
-      hanhaga_bendel: "Bendel"
-    };
-
-    const state = {
-      supabase: null,
-      camper: null,
-      config: {},
-      roster: [],
-      rules: {},
-      entry: blankEntry(),
-      correction: {
-        camper_id: "",
-        entry_date: today(),
-        manual_points_adjustment: 0,
-        ...blankEntry()
-      },
-      message: "",
-      scanBuffer: "",
-      scanTimer: null
-    };
-
-    const app = document.getElementById("app");
-
-    function today() {
-      return new Date().toISOString().slice(0, 10);
-    }
-
-    function blankEntry() {
-      return Object.fromEntries([...learningKeys, ...hanhagaKeys].map(key => [key, false]));
-    }
-
-    function escapeHtml(value) {
-      return String(value ?? "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
-    }
-
-    function normalizeStatus(status) {
-      const value = String(status || "Gold").trim().toLowerCase();
-      if (value === "black") return "Black";
-      if (value === "platinum") return "Platinum";
-      return "Gold";
-    }
-
-    function setTheme(status) {
-      document.documentElement.dataset.theme = normalizeStatus(status);
-    }
-
-    function getStoredBackend() {
-      return {
-        url: localStorage.getItem("mivtza_supabase_url") || "",
-        anon: localStorage.getItem("mivtza_supabase_anon") || "",
-        adminCode: localStorage.getItem("mivtza_admin_code") || ""
+        },
       };
-    }
-
-    function saveBackendFromForm(prefix) {
-      const url = document.getElementById(`${prefix}-url`).value.trim();
-      const anon = document.getElementById(`${prefix}-anon`).value.trim();
-      const adminCode = document.getElementById(`${prefix}-admin-code`).value.trim();
-
-      localStorage.setItem("mivtza_supabase_url", url);
-      localStorage.setItem("mivtza_supabase_anon", anon);
-      localStorage.setItem("mivtza_admin_code", adminCode);
-
-      initSupabase();
-      state.message = "Backend connection saved on this device.";
-      render();
-    }
-
-    function initSupabase() {
-      const backend = getStoredBackend();
-      if (backend.url && backend.anon && window.supabase) {
-        state.supabase = window.supabase.createClient(backend.url, backend.anon);
-      } else {
-        state.supabase = null;
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+      :root {
+        --bg: #f8f3e7;
+        --bg-2: #ffffff;
+        --panel: rgba(255, 255, 255, 0.78);
+        --panel-solid: #ffffff;
+        --text: #282520;
+        --muted: #756e63;
+        --line: rgba(121, 96, 46, 0.2);
+        --accent: #c89c3b;
+        --accent-2: #f1d38b;
+        --accent-soft: rgba(200, 156, 59, 0.16);
+        --card-gradient: linear-gradient(135deg, #fff7df 0%, #e6bf5f 46%, #fff3c6 100%);
+        --luxury-border: linear-gradient(135deg, rgba(246,215,136,.9), rgba(164,117,24,.68), rgba(255,244,204,.92));
       }
-    }
 
-    function isAdminRoute() {
-      return location.hash === "#admin" ||
-        location.search.includes("admin=1") ||
-        location.pathname.toLowerCase().endsWith("/admin");
-    }
+      [data-theme='Platinum'] {
+        --bg: #eef2f6;
+        --bg-2: #ffffff;
+        --panel: rgba(255, 255, 255, 0.72);
+        --panel-solid: #fbfdff;
+        --text: #17202a;
+        --muted: #607080;
+        --line: rgba(90, 111, 132, 0.22);
+        --accent: #6f8498;
+        --accent-2: #94d9ff;
+        --accent-soft: rgba(101, 190, 255, 0.16);
+        --card-gradient: linear-gradient(135deg, #f8fbff 0%, #bdc7d1 28%, #ffffff 48%, #8797a7 100%);
+        --luxury-border: linear-gradient(135deg, rgba(255,255,255,.95), rgba(101,190,255,.66), rgba(113,126,140,.72));
+      }
 
-    function icon(name, size = 18, extra = "") {
-      return `<i data-lucide="${name}" class="${extra}" style="width:${size}px;height:${size}px"></i>`;
-    }
+      [data-theme='Black'] {
+        --bg: #050506;
+        --bg-2: #111214;
+        --panel: rgba(15, 16, 18, 0.82);
+        --panel-solid: #0d0e10;
+        --text: #f6f3ea;
+        --muted: #aaa69c;
+        --line: rgba(255, 255, 255, 0.14);
+        --accent: #d7d1c4;
+        --accent-2: #ffffff;
+        --accent-soft: rgba(255, 255, 255, 0.1);
+        --card-gradient: linear-gradient(135deg, #050506 0%, #191b1f 42%, #050506 100%);
+        --luxury-border: linear-gradient(120deg, #ffffff, #45484f, #f7f2df, #18191d, #ffffff);
+      }
 
-    function refreshIcons() {
-      if (window.lucide) window.lucide.createIcons();
-    }
+      body {
+        background:
+          radial-gradient(circle at top left, var(--accent-soft), transparent 30rem),
+          linear-gradient(140deg, var(--bg), var(--bg-2));
+        color: var(--text);
+        min-height: 100vh;
+        font-family: Inter, ui-sans-serif, system-ui;
+      }
 
-    function shell(content, options = {}) {
-      const admin = Boolean(options.admin);
-      const status = options.status || "Gold";
-      setTheme(status);
+      .glass-panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        backdrop-filter: blur(18px);
+      }
 
-      app.innerHTML = `
-        <main class="min-h-screen px-4 py-5 sm:px-6 lg:px-8">
-          <header class="mx-auto flex max-w-7xl items-center justify-between pb-5">
-            <div class="flex items-center gap-3">
-              <div class="lux-card flex h-11 w-16 items-center justify-center rounded-lg shadow-glow">
-                ${icon("credit-card", 24)}
+      .lux-card {
+        position: relative;
+        background: var(--card-gradient);
+        border: 1px solid transparent;
+        color: var(--text);
+      }
+
+      .lux-card::before {
+        content: '';
+        position: absolute;
+        inset: -1px;
+        border-radius: inherit;
+        padding: 1px;
+        background: var(--luxury-border);
+        -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+        -webkit-mask-composite: xor;
+        mask-composite: exclude;
+        pointer-events: none;
+      }
+
+      [data-theme='Black'] .lux-card::before {
+        background-size: 280% 280%;
+        animation: card-border 5s linear infinite;
+      }
+
+      @keyframes card-border {
+        0% { background-position: 0% 50%; }
+        100% { background-position: 280% 50%; }
+      }
+
+      .focus-ring:focus {
+        outline: 3px solid color-mix(in srgb, var(--accent-2), transparent 50%);
+        outline-offset: 3px;
+      }
+
+      .app-button {
+        background: var(--text);
+        color: var(--bg-2);
+      }
+
+      [data-theme='Black'] .app-button {
+        background: #f6f3ea;
+        color: #050506;
+      }
+
+      .accent-text { color: var(--accent); }
+      .muted-text { color: var(--muted); }
+      .accent-bg { background: var(--accent-soft); }
+      .line-border { border-color: var(--line); }
+
+      .nfc-listening {
+        position: relative;
+        overflow: hidden;
+      }
+
+      .nfc-listening::after {
+        content: '';
+        position: absolute;
+        inset: -35%;
+        background: radial-gradient(circle, color-mix(in srgb, var(--accent-2), transparent 72%) 0%, transparent 58%);
+        animation: nfc-pulse 1.6s ease-in-out infinite;
+        pointer-events: none;
+      }
+
+      @keyframes nfc-pulse {
+        0%, 100% { opacity: .32; transform: scale(.82); }
+        50% { opacity: .9; transform: scale(1); }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+      import React, { useEffect, useMemo, useRef, useState } from 'https://esm.sh/react@18.3.1';
+      import { createRoot } from 'https://esm.sh/react-dom@18.3.1/client';
+      import {
+        Award,
+        BadgeCheck,
+        CalendarDays,
+        Check,
+        ChevronRight,
+        CreditCard,
+        Gauge,
+        KeyRound,
+        Lock,
+        LogOut,
+        PencilLine,
+        Plus,
+        RefreshCw,
+        Save,
+        ScanLine,
+        Settings,
+        ShieldCheck,
+        Smartphone,
+        Sparkles,
+        Users,
+        WalletCards,
+        X,
+      } from 'https://esm.sh/lucide-react@0.468.0';
+      import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
+
+      const dailyFields = {
+        learn_maamar: 'Maamar',
+        learn_chumash: 'Chumash',
+        learn_tanya: 'Tanya',
+        learn_rambam: 'Rambam',
+        learn_hayom_yom: 'Hayom Yom',
+        hanhaga_negel_vasser: 'Negel Vasser',
+        hanhaga_mikvah: 'Mikvah',
+        hanhaga_brochos: 'Brochos & Krias Shema',
+        hanhaga_tehillim: 'Tehillim',
+        hanhaga_bentching: 'Bentching',
+        hanhaga_bendel: 'Bendel',
+      };
+
+      const learningKeys = ['learn_maamar', 'learn_chumash', 'learn_tanya', 'learn_rambam', 'learn_hayom_yom'];
+      const hanhagaKeys = [
+        'hanhaga_negel_vasser',
+        'hanhaga_mikvah',
+        'hanhaga_brochos',
+        'hanhaga_tehillim',
+        'hanhaga_bentching',
+        'hanhaga_bendel',
+      ];
+      const blankEntry = Object.fromEntries([...learningKeys, ...hanhagaKeys].map((key) => [key, false]));
+      const today = () => new Date().toISOString().slice(0, 10);
+
+      function getStoredConfig() {
+        return {
+          url: localStorage.getItem('mivtza_supabase_url') || '',
+          anon: localStorage.getItem('mivtza_supabase_anon') || '',
+          adminCode: localStorage.getItem('mivtza_admin_code') || '',
+        };
+      }
+
+      function useSupabase() {
+        const [config, setConfig] = useState(getStoredConfig);
+        const client = useMemo(() => {
+          if (!config.url || !config.anon) return null;
+          return createClient(config.url, config.anon);
+        }, [config.url, config.anon]);
+
+        const saveConfig = (next) => {
+          localStorage.setItem('mivtza_supabase_url', next.url.trim());
+          localStorage.setItem('mivtza_supabase_anon', next.anon.trim());
+          localStorage.setItem('mivtza_admin_code', next.adminCode.trim());
+          setConfig(getStoredConfig());
+        };
+
+        return { client, config, saveConfig };
+      }
+
+      function classNames(...parts) {
+        return parts.filter(Boolean).join(' ');
+      }
+
+      function normalizeStatus(status) {
+        if (!status) return 'Gold';
+        const cleaned = String(status).trim().toLowerCase();
+        if (cleaned === 'black') return 'Black';
+        if (cleaned === 'platinum') return 'Platinum';
+        return 'Gold';
+      }
+
+      function getWeight(config, field) {
+        const candidates = [
+          field,
+          `${field}_points`,
+          field.replace('learn_', 'points_'),
+          field.replace('hanhaga_', 'points_'),
+        ];
+        for (const candidate of candidates) {
+          const value = Number(config?.[candidate]);
+          if (Number.isFinite(value) && value > 0) return value;
+        }
+        return learningKeys.includes(field) ? 10 : 0;
+      }
+
+      function calculateScore(entry, config) {
+        const learningTotal = learningKeys.reduce((sum, key) => sum + (entry[key] ? getWeight(config, key) : 0), 0);
+        const hanhagaCount = hanhagaKeys.filter((key) => entry[key]).length;
+        return Math.round(learningTotal * (1 + hanhagaCount * 0.05));
+      }
+
+      function IconButton({ icon: Icon, label, className = '', ...props }) {
+        return (
+          <button
+            title={label}
+            aria-label={label}
+            className={classNames('focus-ring inline-flex h-11 w-11 items-center justify-center rounded border line-border transition hover:scale-[1.02]', className)}
+            {...props}
+          >
+            <Icon size={19} />
+          </button>
+        );
+      }
+
+      function TextInput({ icon: Icon, className = '', ...props }) {
+        return (
+          <label className={classNames('glass-panel flex items-center gap-3 rounded px-3 py-2', className)}>
+            {Icon && <Icon size={18} className="muted-text shrink-0" />}
+            <input
+              className="focus-ring min-w-0 flex-1 bg-transparent py-2 text-sm font-semibold outline-none placeholder:font-medium"
+              {...props}
+            />
+          </label>
+        );
+      }
+
+      function Shell({ children, status = 'Gold', admin = false, onLogout }) {
+        useEffect(() => {
+          document.documentElement.dataset.theme = normalizeStatus(status);
+        }, [status]);
+
+        return (
+          <main className="min-h-screen px-4 py-5 sm:px-6 lg:px-8">
+            <div className="mx-auto flex max-w-7xl items-center justify-between pb-5">
+              <div className="flex items-center gap-3">
+                <div className="lux-card flex h-11 w-16 items-center justify-center rounded shadow-glow">
+                  <CreditCard size={24} />
+                </div>
+                <div>
+                  <p className="text-sm font-extrabold uppercase tracking-[0.16em]">American Express Mivtza</p>
+                  <p className="muted-text text-xs font-semibold">Learn. Do. Earn. Grow.</p>
+                </div>
               </div>
-              <div>
-                <p class="text-sm font-black uppercase tracking-[0.16em]">American Express Mivtza</p>
-                <p class="muted text-xs font-bold">Learn. Do. Earn. Grow.</p>
+              <div className="flex items-center gap-2">
+                {admin && <a className="glass-panel rounded px-4 py-2 text-sm font-bold" href="./index.html">Check-In</a>}
+                {!admin && <a className="glass-panel rounded px-4 py-2 text-sm font-bold" href="./index.html?admin=1">Admin</a>}
+                {onLogout && <IconButton icon={LogOut} label="Log out" onClick={onLogout} />}
               </div>
             </div>
+            {children}
+          </main>
+        );
+      }
 
-            <div class="flex items-center gap-2">
-              ${
-                admin
-                  ? `<button class="glass focusable rounded px-4 py-2 text-sm font-bold" onclick="goCheckIn()">Check-In</button>`
-                  : `<button class="glass focusable rounded px-4 py-2 text-sm font-bold" onclick="goAdmin()">Admin</button>`
-              }
-              ${
-                options.logout
-                  ? `<button class="glass focusable flex h-11 w-11 items-center justify-center rounded border line-border" title="Log out" onclick="logoutCamper()">${icon("log-out", 19)}</button>`
-                  : ""
-              }
+      function SetupPanel({ config, saveConfig, embedded = false }) {
+        const [draft, setDraft] = useState(config);
+        const body = (
+          <>
+            {!embedded && (
+              <div className="mb-4 flex items-center gap-3">
+                <Settings className="accent-text" />
+                <div>
+                  <h2 className="text-lg font-extrabold">Backend Connection</h2>
+                  <p className="muted-text text-sm">Add the Supabase project URL and anon key for this device.</p>
+                </div>
+              </div>
+            )}
+            <div className="grid gap-3">
+              <TextInput icon={Gauge} placeholder="Supabase URL" value={draft.url} onChange={(event) => setDraft({ ...draft, url: event.target.value })} />
+              <TextInput icon={KeyRound} placeholder="Supabase anon key" value={draft.anon} onChange={(event) => setDraft({ ...draft, anon: event.target.value })} />
+              <TextInput icon={Lock} placeholder="Optional admin passcode" value={draft.adminCode} onChange={(event) => setDraft({ ...draft, adminCode: event.target.value })} />
+              <button className="app-button focus-ring mt-2 inline-flex items-center justify-center gap-2 rounded px-5 py-3 font-extrabold" onClick={() => saveConfig(draft)}>
+                <Save size={18} /> Save Connection
+              </button>
             </div>
-          </header>
+          </>
+        );
+        if (embedded) return body;
+        return (
+          <div className="mx-auto grid max-w-3xl gap-4">
+            <div className="glass-panel rounded-lg p-5 shadow-luxury">
+              {body}
+            </div>
+          </div>
+        );
+      }
 
-          ${content}
-        </main>
-      `;
+      function LoginScreen({ client, config, saveConfig, onCamper }) {
+        const [scan, setScan] = useState('');
+        const [busy, setBusy] = useState(false);
+        const [error, setError] = useState('');
+        const [nfcListening, setNfcListening] = useState(false);
+        const [nfcMessage, setNfcMessage] = useState('');
+        const inputRef = useRef(null);
+        const ndefRef = useRef(null);
 
-      refreshIcons();
-    }
+        useEffect(() => {
+          inputRef.current?.focus();
+          const id = window.setInterval(() => inputRef.current?.focus(), 1200);
+          return () => window.clearInterval(id);
+        }, []);
 
-    function setupPanel(prefix = "setup", embedded = false) {
-      const backend = getStoredBackend();
-      return `
-        <div class="${embedded ? "" : "mx-auto grid max-w-3xl gap-4"}">
-          <section class="${embedded ? "" : "glass rounded-lg p-5 shadow-luxury"}">
-            ${
-              embedded
-                ? ""
-                : `
-                  <div class="mb-4 flex items-center gap-3">
-                    ${icon("settings", 22, "accent")}
-                    <div>
-                      <h2 class="text-lg font-black">Backend Connection</h2>
-                      <p class="muted text-sm">Add the Supabase project URL and anon key for this device.</p>
+        const fetchCamper = async (nfcId) => {
+          if (!client) return;
+          setBusy(true);
+          setError('');
+          setNfcMessage('');
+          const { data, error: fetchError } = await client
+            .from('camper_profiles')
+            .select('*')
+            .eq('nfc_id', nfcId.trim())
+            .maybeSingle();
+          setBusy(false);
+          setScan('');
+          if (fetchError) {
+            setError(fetchError.message);
+            return;
+          }
+          if (!data) {
+            setError('No camper found for that card.');
+            return;
+          }
+          onCamper(data);
+        };
+
+        const explainNfcError = (scanError) => {
+          if (!('NDEFReader' in window)) {
+            return 'This device or browser does not expose Web NFC. Use Android Chrome on a device with NFC, or scan with the USB reader.';
+          }
+          if (!window.isSecureContext) {
+            return 'Web NFC requires a secure page. Host this file over HTTPS, such as GitHub Pages, or use the keyboard scanner locally.';
+          }
+          if (scanError?.name === 'NotAllowedError') {
+            return 'NFC permission was denied. Allow NFC access in Chrome and try again.';
+          }
+          if (scanError?.name === 'NotReadableError') {
+            return 'NFC is unavailable right now. Make sure NFC is turned on in Android system settings, then try again.';
+          }
+          if (scanError?.name === 'NotSupportedError') {
+            return 'This Android device does not appear to support Web NFC scanning.';
+          }
+          return scanError?.message || 'NFC scanning could not start. Check that NFC is enabled and try again.';
+        };
+
+        const startPhysicalCardScan = async () => {
+          setError('');
+          setNfcMessage('');
+          if (!client) {
+            setError('Supabase connection is not configured on this device.');
+            return;
+          }
+          if (!('NDEFReader' in window) || !window.isSecureContext) {
+            const message = explainNfcError();
+            setNfcMessage(message);
+            window.alert(message);
+            return;
+          }
+
+          try {
+            const ndef = new NDEFReader();
+            ndefRef.current = ndef;
+            ndef.onreading = (event) => {
+              const serialNumber = event.serialNumber;
+              if (!serialNumber) {
+                const message = 'The NFC tag was read, but Chrome did not provide a hardware serial number.';
+                setNfcMessage(message);
+                window.alert(message);
+                return;
+              }
+              setNfcListening(false);
+              setNfcMessage(`Card detected: ${serialNumber}`);
+              fetchCamper(serialNumber);
+            };
+            ndef.onreadingerror = () => {
+              const message = 'NFC tag read failed. Hold the physical card flat against the back of the device and try again.';
+              setNfcMessage(message);
+              window.alert(message);
+            };
+            await ndef.scan();
+            setNfcListening(true);
+            setNfcMessage('Listening for a physical card. Tap the card to the back of this Android device.');
+          } catch (scanError) {
+            setNfcListening(false);
+            const message = explainNfcError(scanError);
+            setNfcMessage(message);
+            window.alert(message);
+          }
+        };
+
+        const onKeyDown = (event) => {
+          if (event.key === 'Enter' && scan.trim()) fetchCamper(scan);
+        };
+
+        return (
+          <Shell status="Gold">
+            <div className="mx-auto grid min-h-[calc(100vh-7rem)] max-w-5xl place-items-center">
+              <section className="grid w-full gap-6 text-center">
+                <div>
+                  <p className="accent-text text-sm font-extrabold uppercase tracking-[0.28em]">American Express Mivtza</p>
+                  <h1 className="mt-2 text-4xl font-extrabold sm:text-6xl">Learn. Do. Earn. Grow.</h1>
+                </div>
+                <div className="glass-panel mx-auto grid h-56 w-full max-w-xl place-items-center rounded-lg border-dashed shadow-luxury">
+                  <div className="lux-card flex h-32 w-52 flex-col items-center justify-center gap-3 rounded-lg">
+                    <Sparkles size={34} />
+                    <span className="text-xs font-extrabold uppercase tracking-[0.2em]">Graphic Logo</span>
+                  </div>
+                </div>
+                <div className="mx-auto w-full max-w-xl">
+                  <label className="glass-panel flex items-center gap-3 rounded-lg px-5 py-4 shadow-glow">
+                    <ScanLine className="accent-text" />
+                    <input
+                      ref={inputRef}
+                      value={scan}
+                      onChange={(event) => setScan(event.target.value)}
+                      onKeyDown={onKeyDown}
+                      placeholder="Scan NFC card"
+                      className="focus-ring flex-1 bg-transparent text-center text-lg font-bold outline-none placeholder:muted-text"
+                    />
+                    {busy ? <RefreshCw className="animate-spin" /> : <ChevronRight />}
+                  </label>
+                  <button
+                    type="button"
+                    onClick={startPhysicalCardScan}
+                    disabled={busy || nfcListening}
+                    className={classNames(
+                      'lux-card focus-ring mt-4 flex w-full items-center justify-center gap-3 rounded-lg px-5 py-5 text-lg font-extrabold shadow-luxury transition hover:scale-[1.01] disabled:cursor-wait disabled:opacity-90',
+                      nfcListening && 'nfc-listening'
+                    )}
+                  >
+                    {nfcListening ? <RefreshCw className="relative z-10 animate-spin" size={24} /> : <Smartphone className="relative z-10" size={24} />}
+                    <span className="relative z-10">{nfcListening ? 'Listening for Card' : 'Tap Physical Card'}</span>
+                  </button>
+                  {nfcMessage && (
+                    <p className="accent-bg mt-3 rounded border line-border px-4 py-3 text-sm font-semibold">
+                      {nfcMessage}
+                    </p>
+                  )}
+                  {error && <p className="mt-3 rounded border border-red-400/40 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-600">{error}</p>}
+                  {!client && <SetupPanel config={config} saveConfig={saveConfig} />}
+                </div>
+              </section>
+            </div>
+          </Shell>
+        );
+      }
+
+      function Stat({ label, value, icon: Icon }) {
+        return (
+          <div className="glass-panel rounded-lg p-4">
+            <div className="mb-2 flex items-center gap-2 muted-text">
+              <Icon size={16} />
+              <span className="text-xs font-bold uppercase tracking-[0.12em]">{label}</span>
+            </div>
+            <p className="text-2xl font-extrabold">{value ?? 0}</p>
+          </div>
+        );
+      }
+
+      function CheckboxTile({ checked, label, onChange }) {
+        return (
+          <button
+            type="button"
+            onClick={() => onChange(!checked)}
+            className={classNames(
+              'focus-ring flex min-h-16 items-center gap-3 rounded-lg border p-4 text-left font-bold transition',
+              checked ? 'accent-bg line-border shadow-glow' : 'glass-panel hover:scale-[1.01]'
+            )}
+          >
+            <span className={classNames('flex h-7 w-7 shrink-0 items-center justify-center rounded border line-border', checked && 'app-button')}>
+              {checked && <Check size={17} />}
+            </span>
+            {label}
+          </button>
+        );
+      }
+
+      function CamperDashboard({ client, camper, onLogout }) {
+        const [entry, setEntry] = useState(blankEntry);
+        const [config, setConfig] = useState(null);
+        const [approved, setApproved] = useState(false);
+        const [error, setError] = useState('');
+        const status = normalizeStatus(camper.card_status);
+
+        useEffect(() => {
+          client?.from('mivtza_config').select('*').limit(1).maybeSingle().then(({ data }) => setConfig(data || {}));
+        }, [client]);
+
+        const score = calculateScore(entry, config);
+
+        const submit = async () => {
+          setError('');
+          const { error: insertError } = await client.from('daily_entries').insert({
+            camper_id: camper.id,
+            entry_date: today(),
+            ...entry,
+          });
+          if (insertError) {
+            setError(insertError.message);
+            return;
+          }
+          setApproved(true);
+          window.setTimeout(() => {
+            setApproved(false);
+            onLogout();
+          }, 2000);
+        };
+
+        return (
+          <Shell status={status} onLogout={onLogout}>
+            <div className="mx-auto grid max-w-7xl gap-5">
+              <section className="lux-card rounded-lg p-5 shadow-luxury">
+                <div className="grid gap-4 lg:grid-cols-[1.4fr_.8fr_.8fr_.8fr]">
+                  <div>
+                    <p className="text-xs font-extrabold uppercase tracking-[0.18em] opacity-70">Cardmember</p>
+                    <h1 className="mt-2 text-4xl font-extrabold">{camper.name}</h1>
+                  </div>
+                  <Stat label="Tier" value={status} icon={WalletCards} />
+                  <Stat label="Lifetime" value={camper.total_points} icon={Award} />
+                  <Stat label="This Week" value={camper.weekly_points} icon={CalendarDays} />
+                </div>
+              </section>
+
+              <div className="grid gap-5 lg:grid-cols-[1fr_20rem]">
+                <section className="grid gap-5">
+                  <div className="glass-panel rounded-lg p-5">
+                    <h2 className="mb-4 flex items-center gap-2 text-xl font-extrabold"><Sparkles className="accent-text" /> Learning Points</h2>
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                      {learningKeys.map((key) => (
+                        <CheckboxTile key={key} label={dailyFields[key]} checked={entry[key]} onChange={(value) => setEntry({ ...entry, [key]: value })} />
+                      ))}
                     </div>
                   </div>
-                `
-            }
-
-            <div class="grid gap-3">
-              ${inputRow(`${prefix}-url`, "Supabase URL", backend.url, "gauge")}
-              ${inputRow(`${prefix}-anon`, "Supabase anon key", backend.anon, "key-round")}
-              ${inputRow(`${prefix}-admin-code`, "Optional admin passcode", backend.adminCode, "lock", "password")}
-              <button class="btn focusable mt-2 inline-flex items-center justify-center gap-2 px-5 py-3" onclick="saveBackendFromForm('${prefix}')">
-                ${icon("save", 18)} Save Connection
-              </button>
-            </div>
-          </section>
-        </div>
-      `;
-    }
-
-    function inputRow(id, placeholder, value = "", iconName = "circle", type = "text") {
-      return `
-        <label class="glass flex items-center gap-3 rounded px-3 py-2">
-          ${icon(iconName, 18, "muted shrink-0")}
-          <input
-            id="${id}"
-            type="${type}"
-            value="${escapeHtml(value)}"
-            placeholder="${escapeHtml(placeholder)}"
-            class="focusable min-w-0 flex-1 bg-transparent py-2 text-sm font-bold outline-none placeholder:font-medium"
-          />
-        </label>
-      `;
-    }
-
-    function goAdmin() {
-      location.hash = "#admin";
-      render();
-    }
-
-    function goCheckIn() {
-      history.replaceState(null, "", location.pathname);
-      state.camper = null;
-      state.entry = blankEntry();
-      state.message = "";
-      render();
-    }
-
-    function logoutCamper() {
-      state.camper = null;
-      state.entry = blankEntry();
-      state.message = "";
-      setTheme("Gold");
-      render();
-    }
-
-    function render() {
-      if (isAdminRoute()) {
-        renderAdminGate();
-      } else if (state.camper) {
-        renderCamperDashboard();
-      } else {
-        renderLogin();
-      }
-    }
-
-    function renderLogin(error = "") {
-      setTheme("Gold");
-
-      shell(`
-        <div class="mx-auto grid min-h-[calc(100vh-7rem)] max-w-5xl place-items-center">
-          <section class="grid w-full gap-6 text-center">
-            <div>
-              <p class="accent text-sm font-black uppercase tracking-[0.28em]">American Express Mivtza</p>
-              <h1 class="mt-2 text-4xl font-black sm:text-6xl">Learn. Do. Earn. Grow.</h1>
-            </div>
-
-            <div class="glass mx-auto grid h-56 w-full max-w-xl place-items-center rounded-lg border-dashed shadow-luxury">
-              <div class="lux-card flex h-32 w-52 flex-col items-center justify-center gap-3 rounded-lg">
-                ${icon("sparkles", 34)}
-                <span class="text-xs font-black uppercase tracking-[0.2em]">Graphic Logo</span>
-              </div>
-            </div>
-
-            <div class="mx-auto w-full max-w-xl">
-              <input id="hiddenScanInput" class="hidden-scan-input" autocomplete="off" />
-
-              <label class="glass flex items-center gap-3 rounded-lg px-5 py-4 shadow-glow">
-                ${icon("scan-line", 22, "accent")}
-                <input
-                  id="scanInput"
-                  placeholder="Scan NFC card"
-                  autocomplete="off"
-                  class="focusable flex-1 bg-transparent text-center text-lg font-black outline-none"
-                  onkeydown="handleScanInputKey(event)"
-                />
-                ${icon("chevron-right", 22)}
-              </label>
-
-              ${
-                error
-                  ? `<p class="mt-3 rounded border border-red-400/40 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-600">${escapeHtml(error)}</p>`
-                  : ""
-              }
-
-              ${
-                !state.supabase
-                  ? `<div class="mt-5">${setupPanel("login")}</div>`
-                  : `<p class="muted mt-3 text-sm font-bold">Reader is listening. Scan a card to begin.</p>`
-              }
-            </div>
-          </section>
-        </div>
-      `);
-
-      const input = document.getElementById("scanInput");
-      if (input) {
-        input.focus();
-        setTimeout(() => input.focus(), 100);
-      }
-    }
-
-    function handleScanInputKey(event) {
-      if (event.key === "Enter") {
-        const value = event.currentTarget.value.trim();
-        event.currentTarget.value = "";
-        if (value) fetchCamperByNfc(value);
-      }
-    }
-
-    document.addEventListener("keydown", event => {
-      if (isAdminRoute() || state.camper) return;
-
-      const active = document.activeElement;
-      const isTypingField = active && ["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName);
-
-      if (isTypingField && active.id !== "hiddenScanInput" && active.id !== "scanInput") return;
-
-      if (event.key === "Enter") {
-        const scanned = state.scanBuffer.trim();
-        state.scanBuffer = "";
-        if (scanned) fetchCamperByNfc(scanned);
-        return;
-      }
-
-      if (event.key.length === 1) {
-        state.scanBuffer += event.key;
-        clearTimeout(state.scanTimer);
-        state.scanTimer = setTimeout(() => state.scanBuffer = "", 600);
-      }
-    });
-
-    async function fetchCamperByNfc(nfcId) {
-      if (!state.supabase) {
-        renderLogin("Supabase connection is not configured on this device.");
-        return;
-      }
-
-      renderLogin("Fetching camper profile...");
-
-      const { data, error } = await state.supabase
-        .from("camper_profiles")
-        .select("*")
-        .eq("nfc_id", nfcId.trim())
-        .maybeSingle();
-
-      if (error) {
-        renderLogin(error.message);
-        return;
-      }
-
-      if (!data) {
-        renderLogin("No camper found for that card.");
-        return;
-      }
-
-      state.camper = data;
-      state.entry = blankEntry();
-      await loadConfigForScoring();
-      renderCamperDashboard();
-    }
-
-    async function loadConfigForScoring() {
-      if (!state.supabase) return;
-      const { data } = await state.supabase
-        .from("mivtza_config")
-        .select("*")
-        .limit(1)
-        .maybeSingle();
-
-      state.config = data || {};
-    }
-
-    function getWeight(config, field) {
-      const candidates = [
-        field,
-        `${field}_points`,
-        field.replace("learn_", "points_"),
-        field.replace("hanhaga_", "points_")
-      ];
-
-      for (const candidate of candidates) {
-        const value = Number(config?.[candidate]);
-        if (Number.isFinite(value) && value > 0) return value;
-      }
-
-      return learningKeys.includes(field) ? 10 : 0;
-    }
-
-    function calculateScore(entry, config) {
-      const learningTotal = learningKeys.reduce((sum, key) => {
-        return sum + (entry[key] ? getWeight(config, key) : 0);
-      }, 0);
-
-      const hanhagaCount = hanhagaKeys.filter(key => entry[key]).length;
-      return Math.round(learningTotal * (1 + hanhagaCount * 0.05));
-    }
-
-    function statCard(label, value, iconName) {
-      return `
-        <div class="glass rounded-lg p-4">
-          <div class="muted mb-2 flex items-center gap-2">
-            ${icon(iconName, 16)}
-            <span class="text-xs font-black uppercase tracking-[0.12em]">${escapeHtml(label)}</span>
-          </div>
-          <p class="text-2xl font-black">${escapeHtml(value ?? 0)}</p>
-        </div>
-      `;
-    }
-
-    function checkboxTile(field, source = "entry") {
-      const checked = state[source][field];
-
-      return `
-        <button
-          type="button"
-          class="focusable flex min-h-16 items-center gap-3 rounded-lg border p-4 text-left font-black transition ${checked ? "tile-checked" : "glass"}"
-          onclick="toggleField('${source}', '${field}')"
-        >
-          <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded border line-border ${checked ? "btn" : ""}">
-            ${checked ? icon("check", 17) : ""}
-          </span>
-          ${escapeHtml(fieldLabels[field])}
-        </button>
-      `;
-    }
-
-    function toggleField(source, field) {
-      state[source][field] = !state[source][field];
-      if (source === "entry") renderCamperDashboard();
-      if (source === "correction") renderAdmin();
-    }
-
-    function renderCamperDashboard() {
-      const camper = state.camper;
-      const status = normalizeStatus(camper.card_status);
-      const score = calculateScore(state.entry, state.config);
-
-      shell(`
-        <div class="mx-auto grid max-w-7xl gap-5">
-          <section class="lux-card rounded-lg p-5 shadow-luxury">
-            <div class="grid gap-4 lg:grid-cols-[1.4fr_.8fr_.8fr_.8fr]">
-              <div>
-                <p class="text-xs font-black uppercase tracking-[0.18em] opacity-70">Cardmember</p>
-                <h1 class="mt-2 text-4xl font-black">${escapeHtml(camper.name)}</h1>
-              </div>
-              ${statCard("Tier", status, "wallet-cards")}
-              ${statCard("Lifetime", camper.total_points, "award")}
-              ${statCard("This Week", camper.weekly_points, "calendar-days")}
-            </div>
-          </section>
-
-          <div class="grid gap-5 lg:grid-cols-[1fr_20rem]">
-            <section class="grid gap-5">
-              <div class="glass rounded-lg p-5">
-                <h2 class="mb-4 flex items-center gap-2 text-xl font-black">
-                  ${icon("sparkles", 22, "accent")} Learning Points
-                </h2>
-                <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  ${learningKeys.map(key => checkboxTile(key)).join("")}
-                </div>
-              </div>
-
-              <div class="glass rounded-lg p-5">
-                <h2 class="mb-4 flex items-center gap-2 text-xl font-black">
-                  ${icon("shield-check", 22, "accent")} Daily Hanhagos
-                </h2>
-                <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  ${hanhagaKeys.map(key => checkboxTile(key)).join("")}
-                </div>
-              </div>
-            </section>
-
-            <aside class="glass sticky top-5 h-fit rounded-lg p-5 shadow-luxury">
-              <p class="muted text-xs font-black uppercase tracking-[0.16em]">Estimated Daily Score</p>
-              <p class="mt-3 text-6xl font-black">${score}</p>
-              <p class="muted mt-3 text-sm font-bold">Learning total multiplied by 1.00 plus 0.05 for each selected Hanhaga.</p>
-              <button class="btn focusable mt-5 flex w-full items-center justify-center gap-2 px-5 py-4 text-lg" onclick="submitDailyEntry()">
-                ${icon("badge-check", 22)} Submit
-              </button>
-            </aside>
-          </div>
-        </div>
-      `, { status, logout: true });
-    }
-
-    async function submitDailyEntry() {
-      if (!state.supabase || !state.camper) return;
-
-      const payload = {
-        camper_id: state.camper.id,
-        entry_date: today(),
-        ...state.entry
-      };
-
-      const { error } = await state.supabase
-        .from("daily_entries")
-        .insert(payload);
-
-      if (error) {
-        alert(error.message);
-        return;
-      }
-
-      showApprovedModal();
-
-      setTimeout(() => {
-        state.camper = null;
-        state.entry = blankEntry();
-        setTheme("Gold");
-        render();
-      }, 2000);
-    }
-
-    function showApprovedModal() {
-      const modal = document.createElement("div");
-      modal.className = "fixed inset-0 z-50 grid place-items-center bg-black/45 p-6";
-      modal.innerHTML = `
-        <div class="lux-card max-w-md rounded-lg p-8 text-center shadow-luxury">
-          ${icon("badge-check", 52)}
-          <h2 class="mt-4 text-3xl font-black">Transaction Approved</h2>
-          <p class="mt-2 text-lg font-black">Points Credited</p>
-        </div>
-      `;
-      document.body.appendChild(modal);
-      refreshIcons();
-      setTimeout(() => modal.remove(), 1900);
-    }
-
-    function renderAdminGate() {
-      const backend = getStoredBackend();
-      setTheme("Platinum");
-
-      if (!backend.adminCode || sessionStorage.getItem("mivtza_admin_unlocked") === "1") {
-        renderAdmin();
-        return;
-      }
-
-      shell(`
-        <div class="mx-auto grid min-h-[60vh] max-w-md place-items-center">
-          <section class="glass w-full rounded-lg p-5 shadow-luxury">
-            ${icon("lock", 28, "accent mb-3")}
-            <h1 class="text-2xl font-black">Admin Access</h1>
-            <div class="mt-5">${inputRow("admin-passcode", "Passcode", "", "key-round", "password")}</div>
-            <button class="btn focusable mt-4 w-full px-5 py-3" onclick="unlockAdmin()">Unlock</button>
-          </section>
-        </div>
-      `, { admin: true, status: "Platinum" });
-    }
-
-    function unlockAdmin() {
-      const backend = getStoredBackend();
-      const value = document.getElementById("admin-passcode").value;
-
-      if (value === backend.adminCode) {
-        sessionStorage.setItem("mivtza_admin_unlocked", "1");
-        renderAdmin();
-      } else {
-        alert("Incorrect passcode.");
-      }
-    }
-
-    async function loadAdminData() {
-      if (!state.supabase) return;
-
-      const [{ data: roster, error: rosterError }, { data: rules, error: rulesError }] = await Promise.all([
-        state.supabase.from("camper_profiles").select("*").order("name"),
-        state.supabase.from("mivtza_config").select("*").limit(1).maybeSingle()
-      ]);
-
-      if (rosterError) state.message = rosterError.message;
-      if (rulesError) state.message = rulesError.message;
-
-      state.roster = roster || [];
-      state.rules = rules || {};
-    }
-
-    async function renderAdmin() {
-      setTheme("Platinum");
-
-      if (!state.supabase) {
-        shell(`
-          <div class="mx-auto grid max-w-3xl gap-5">
-            ${setupPanel("admin-setup")}
-          </div>
-        `, { admin: true, status: "Platinum" });
-        return;
-      }
-
-      await loadAdminData();
-
-      const vipThreshold = Number(state.rules.vip_event_threshold ?? 700);
-      const standardThreshold = Number(state.rules.standard_event_threshold ?? 400);
-
-      const vip = state.roster.filter(camper => Number(camper.weekly_points) >= vipThreshold);
-      const standard = state.roster.filter(camper => {
-        const points = Number(camper.weekly_points);
-        return points >= standardThreshold && points < vipThreshold;
-      });
-      const notEligible = state.roster.filter(camper => Number(camper.weekly_points) < standardThreshold);
-
-      shell(`
-        <div class="mx-auto grid max-w-7xl gap-5">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h1 class="text-3xl font-black">Private Admin Control Center</h1>
-              <p class="muted font-bold">Roster, event access, adjustments, and config rules.</p>
-            </div>
-            <button class="glass focusable flex h-11 w-11 items-center justify-center rounded border line-border" title="Refresh" onclick="renderAdmin()">
-              ${icon("refresh-cw", 19)}
-            </button>
-          </div>
-
-          ${
-            state.message
-              ? `<div class="glass flex items-center justify-between rounded-lg p-4 font-bold">
-                   <span>${escapeHtml(state.message)}</span>
-                   <button onclick="state.message=''; renderAdmin()">${icon("x", 18)}</button>
-                 </div>`
-              : ""
-          }
-
-          ${rosterSection()}
-          <section class="grid gap-4 lg:grid-cols-3">
-            ${accessList("VIP Event Access", "sparkles", vip)}
-            ${accessList("Standard Event Access", "badge-check", standard)}
-            ${accessList("Not Eligible", "x", notEligible)}
-          </section>
-
-          <section class="grid gap-5 lg:grid-cols-2">
-            ${registerCamperSection()}
-            <div class="glass rounded-lg p-5">
-              <h2 class="mb-4 flex items-center gap-2 text-xl font-black">
-                ${icon("settings", 22, "accent")} Backend Settings
-              </h2>
-              ${setupPanel("admin-backend", true)}
-            </div>
-          </section>
-
-          ${adjustmentsSection()}
-          ${configRulesSection()}
-        </div>
-      `, { admin: true, status: "Platinum" });
-    }
-
-    function rosterSection() {
-      return `
-        <section class="glass overflow-hidden rounded-lg shadow-luxury">
-          <div class="flex items-center gap-2 border-b line-border p-4">
-            ${icon("users", 22, "accent")}
-            <h2 class="text-xl font-black">Camper Roster</h2>
-          </div>
-
-          <div class="overflow-x-auto">
-            <table class="w-full min-w-[850px] text-left text-sm">
-              <thead class="accent-bg">
-                <tr>
-                  ${["Name", "NFC ID", "Card Status", "Weekly Points", "Lifetime Points", "Weekly Event Status"].map(head => `
-                    <th class="px-4 py-3 font-black">${head}</th>
-                  `).join("")}
-                </tr>
-              </thead>
-              <tbody>
-                ${state.roster.map(camper => `
-                  <tr class="border-t line-border">
-                    <td class="px-4 py-3 font-black">${escapeHtml(camper.name)}</td>
-                    <td class="px-4 py-3">${escapeHtml(camper.nfc_id)}</td>
-                    <td class="px-4 py-3">${escapeHtml(camper.card_status)}</td>
-                    <td class="px-4 py-3">${escapeHtml(camper.weekly_points)}</td>
-                    <td class="px-4 py-3">${escapeHtml(camper.total_points)}</td>
-                    <td class="px-4 py-3">${escapeHtml(camper.weekly_event_status)}</td>
-                  </tr>
-                `).join("")}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      `;
-    }
-
-    function accessList(title, iconName, campers) {
-      return `
-        <div class="glass rounded-lg p-5">
-          <h2 class="mb-4 flex items-center gap-2 text-lg font-black">
-            ${icon(iconName, 21, "accent")} ${escapeHtml(title)}
-          </h2>
-          <div class="grid gap-2">
-            ${
-              campers.length
-                ? campers.map(camper => `
-                    <div class="flex items-center justify-between rounded border line-border px-3 py-2">
-                      <span class="font-black">${escapeHtml(camper.name)}</span>
-                      <span class="muted text-sm font-bold">${escapeHtml(camper.weekly_points)} pts</span>
+                  <div className="glass-panel rounded-lg p-5">
+                    <h2 className="mb-4 flex items-center gap-2 text-xl font-extrabold"><ShieldCheck className="accent-text" /> Daily Hanhagos</h2>
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                      {hanhagaKeys.map((key) => (
+                        <CheckboxTile key={key} label={dailyFields[key]} checked={entry[key]} onChange={(value) => setEntry({ ...entry, [key]: value })} />
+                      ))}
                     </div>
-                  `).join("")
-                : `<p class="muted text-sm font-bold">No campers in this group.</p>`
-            }
-          </div>
-        </div>
-      `;
-    }
+                  </div>
+                </section>
 
-    function registerCamperSection() {
-      return `
-        <div class="glass rounded-lg p-5">
-          <h2 class="mb-4 flex items-center gap-2 text-xl font-black">
-            ${icon("plus", 22, "accent")} Register Camper
-          </h2>
-          <div class="grid gap-3">
-            ${inputRow("new-camper-name", "Camper name", "", "users")}
-            ${inputRow("new-camper-nfc", "Scan NFC card ID", "", "scan-line")}
-            <button class="btn focusable px-5 py-3" onclick="registerCamper()">Register</button>
-          </div>
-        </div>
-      `;
-    }
+                <aside className="glass-panel sticky top-5 h-fit rounded-lg p-5 shadow-luxury">
+                  <p className="muted-text text-xs font-extrabold uppercase tracking-[0.16em]">Estimated Daily Score</p>
+                  <p className="mt-3 text-6xl font-extrabold">{score}</p>
+                  <p className="muted-text mt-3 text-sm font-semibold">Learning total multiplied by 1.00 plus 0.05 for each selected Hanhaga.</p>
+                  {error && <p className="mt-4 rounded border border-red-400/40 bg-red-500/10 p-3 text-sm font-semibold text-red-600">{error}</p>}
+                  <button className="app-button focus-ring mt-5 flex w-full items-center justify-center gap-2 rounded px-5 py-4 text-lg font-extrabold" onClick={submit}>
+                    <BadgeCheck size={22} /> Submit
+                  </button>
+                </aside>
+              </div>
+            </div>
 
-    async function registerCamper() {
-      const name = document.getElementById("new-camper-name").value.trim();
-      const nfc_id = document.getElementById("new-camper-nfc").value.trim();
-
-      if (!name || !nfc_id) {
-        alert("Name and NFC ID are required.");
-        return;
+            {approved && (
+              <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-6">
+                <div className="lux-card max-w-md rounded-lg p-8 text-center shadow-luxury">
+                  <BadgeCheck className="mx-auto mb-4" size={52} />
+                  <h2 className="text-3xl font-extrabold">Transaction Approved</h2>
+                  <p className="mt-2 text-lg font-bold">Points Credited</p>
+                </div>
+              </div>
+            )}
+          </Shell>
+        );
       }
 
-      const { error } = await state.supabase
-        .from("campers")
-        .insert({ name, nfc_id });
-
-      state.message = error ? error.message : "Camper registered.";
-      renderAdmin();
-    }
-
-    function adjustmentsSection() {
-      return `
-        <section class="glass rounded-lg p-5">
-          <h2 class="mb-4 flex items-center gap-2 text-xl font-black">
-            ${icon("pencil-line", 22, "accent")} Adjustments
-          </h2>
-
-          <div class="grid gap-4 lg:grid-cols-[1fr_12rem_10rem]">
-            <select id="correction-camper" class="focusable rounded border line-border bg-transparent px-3 py-3 font-bold" onchange="state.correction.camper_id=this.value">
-              <option value="">Select camper</option>
-              ${state.roster.map(camper => `
-                <option value="${escapeHtml(camper.id)}" ${String(state.correction.camper_id) === String(camper.id) ? "selected" : ""}>
-                  ${escapeHtml(camper.name)}
-                </option>
-              `).join("")}
-            </select>
-
-            <input
-              id="correction-date"
-              class="focusable rounded border line-border bg-transparent px-3 py-3 font-bold"
-              type="date"
-              value="${escapeHtml(state.correction.entry_date)}"
-              onchange="state.correction.entry_date=this.value"
-            />
-
-            <input
-              id="manual-points"
-              class="focusable rounded border line-border bg-transparent px-3 py-3 font-bold"
-              type="number"
-              placeholder="Manual pts"
-              value="${escapeHtml(state.correction.manual_points_adjustment)}"
-              onchange="state.correction.manual_points_adjustment=this.value"
-            />
-          </div>
-
-          <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            ${[...learningKeys, ...hanhagaKeys].map(key => checkboxTile(key, "correction")).join("")}
-          </div>
-
-          <button class="btn focusable mt-4 inline-flex items-center gap-2 px-5 py-3" onclick="saveCorrection()">
-            ${icon("save", 18)} Save Correction
-          </button>
-        </section>
-      `;
-    }
-
-    async function saveCorrection() {
-      const camperId = state.correction.camper_id;
-      if (!camperId) {
-        alert("Select a camper first.");
-        return;
+      function AdminGate({ config, children }) {
+        const [code, setCode] = useState('');
+        const [unlocked, setUnlocked] = useState(!config.adminCode || sessionStorage.getItem('mivtza_admin_unlocked') === '1');
+        if (unlocked) return children;
+        return (
+          <Shell admin status="Platinum">
+            <div className="mx-auto grid min-h-[60vh] max-w-md place-items-center">
+              <div className="glass-panel w-full rounded-lg p-5 shadow-luxury">
+                <Lock className="accent-text mb-3" />
+                <h1 className="text-2xl font-extrabold">Admin Access</h1>
+                <TextInput className="mt-5" icon={KeyRound} type="password" placeholder="Passcode" value={code} onChange={(event) => setCode(event.target.value)} />
+                <button
+                  className="app-button focus-ring mt-4 w-full rounded px-5 py-3 font-extrabold"
+                  onClick={() => {
+                    if (code === config.adminCode) {
+                      sessionStorage.setItem('mivtza_admin_unlocked', '1');
+                      setUnlocked(true);
+                    }
+                  }}
+                >
+                  Unlock
+                </button>
+              </div>
+            </div>
+          </Shell>
+        );
       }
 
-      const entryPayload = {
-        camper_id: camperId,
-        entry_date: state.correction.entry_date
-      };
+      function AdminDashboard({ client, config, saveConfig }) {
+        const [campers, setCampers] = useState([]);
+        const [rules, setRules] = useState({});
+        const [loading, setLoading] = useState(true);
+        const [message, setMessage] = useState('');
+        const [newCamper, setNewCamper] = useState({ name: '', nfc_id: '' });
+        const [correction, setCorrection] = useState({ camper_id: '', entry_date: today(), ...blankEntry, manual_points_adjustment: 0 });
 
-      [...learningKeys, ...hanhagaKeys].forEach(key => {
-        entryPayload[key] = Boolean(state.correction[key]);
-      });
+        const load = async () => {
+          setLoading(true);
+          const [{ data: roster }, { data: configRow }] = await Promise.all([
+            client.from('camper_profiles').select('*').order('name'),
+            client.from('mivtza_config').select('*').limit(1).maybeSingle(),
+          ]);
+          setCampers(roster || []);
+          setRules(configRow || {});
+          setLoading(false);
+        };
 
-      const { error: entryError } = await state.supabase
-        .from("daily_entries")
-        .upsert(entryPayload, { onConflict: "camper_id,entry_date" });
+        useEffect(() => {
+          if (client) load();
+        }, [client]);
 
-      const { error: camperError } = await state.supabase
-        .from("campers")
-        .update({ manual_points_adjustment: Number(state.correction.manual_points_adjustment || 0) })
-        .eq("id", camperId);
+        const vip = campers.filter((camper) => Number(camper.weekly_points) >= Number(rules.vip_event_threshold ?? 700));
+        const standard = campers.filter((camper) => Number(camper.weekly_points) >= Number(rules.standard_event_threshold ?? 400) && Number(camper.weekly_points) < Number(rules.vip_event_threshold ?? 700));
+        const notEligible = campers.filter((camper) => Number(camper.weekly_points) < Number(rules.standard_event_threshold ?? 400));
 
-      state.message = entryError?.message || camperError?.message || "Correction saved.";
-      renderAdmin();
-    }
+        const registerCamper = async () => {
+          const { error } = await client.from('campers').insert({ name: newCamper.name.trim(), nfc_id: newCamper.nfc_id.trim() });
+          setMessage(error ? error.message : 'Camper registered.');
+          if (!error) setNewCamper({ name: '', nfc_id: '' });
+          load();
+        };
 
-    function configRulesSection() {
-      const entries = Object.entries(state.rules);
+        const saveCorrection = async () => {
+          const selected = campers.find((camper) => String(camper.id) === String(correction.camper_id));
+          if (!selected) return;
+          const entryPayload = { camper_id: selected.id, entry_date: correction.entry_date };
+          [...learningKeys, ...hanhagaKeys].forEach((key) => (entryPayload[key] = correction[key]));
+          const { error: entryError } = await client.from('daily_entries').upsert(entryPayload, { onConflict: 'camper_id,entry_date' });
+          const { error: camperError } = await client
+            .from('campers')
+            .update({ manual_points_adjustment: Number(correction.manual_points_adjustment || 0) })
+            .eq('id', selected.id);
+          setMessage(entryError?.message || camperError?.message || 'Correction saved.');
+          load();
+        };
 
-      return `
-        <section class="glass rounded-lg p-5">
-          <h2 class="mb-4 flex items-center gap-2 text-xl font-black">
-            ${icon("gauge", 22, "accent")} Config Rules
-          </h2>
+        const saveRules = async () => {
+          const payload = { ...rules };
+          const id = payload.id;
+          const query = id ? client.from('mivtza_config').update(payload).eq('id', id) : client.from('mivtza_config').upsert(payload);
+          const { error } = await query;
+          setMessage(error ? error.message : 'System rules saved.');
+          load();
+        };
 
-          ${
-            entries.length
-              ? `
-                <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  ${entries.map(([key, value]) => `
-                    <label class="grid gap-1">
-                      <span class="muted text-xs font-black uppercase tracking-[0.1em]">${escapeHtml(key)}</span>
+        if (!client) {
+          return (
+            <Shell admin status="Platinum">
+              <SetupPanel config={config} saveConfig={saveConfig} />
+            </Shell>
+          );
+        }
+
+        return (
+          <Shell admin status="Platinum">
+            <div className="mx-auto grid max-w-7xl gap-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h1 className="text-3xl font-extrabold">Private Admin Dashboard</h1>
+                  <p className="muted-text font-semibold">Roster, event eligibility, corrections, and global rules.</p>
+                </div>
+                <IconButton icon={RefreshCw} label="Refresh data" onClick={load} className={loading ? 'animate-spin' : ''} />
+              </div>
+
+              {message && (
+                <div className="glass-panel flex items-center justify-between rounded-lg p-4 font-semibold">
+                  <span>{message}</span>
+                  <button onClick={() => setMessage('')}><X size={18} /></button>
+                </div>
+              )}
+
+              <section className="glass-panel overflow-hidden rounded-lg shadow-luxury">
+                <div className="flex items-center gap-2 border-b line-border p-4">
+                  <Users className="accent-text" />
+                  <h2 className="text-xl font-extrabold">Camper Roster</h2>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[850px] text-left text-sm">
+                    <thead className="accent-bg">
+                      <tr>
+                        {['Name', 'NFC ID', 'Card Status', 'Weekly Points', 'Lifetime Points', 'Weekly Event Status'].map((head) => (
+                          <th key={head} className="px-4 py-3 font-extrabold">{head}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {campers.map((camper) => (
+                        <tr key={camper.id} className="border-t line-border">
+                          <td className="px-4 py-3 font-bold">{camper.name}</td>
+                          <td className="px-4 py-3">{camper.nfc_id}</td>
+                          <td className="px-4 py-3">{camper.card_status}</td>
+                          <td className="px-4 py-3">{camper.weekly_points}</td>
+                          <td className="px-4 py-3">{camper.total_points}</td>
+                          <td className="px-4 py-3">{camper.weekly_event_status}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section className="grid gap-4 lg:grid-cols-3">
+                <AccessList title="VIP Event Access" icon={Sparkles} campers={vip} />
+                <AccessList title="Standard Event Access" icon={BadgeCheck} campers={standard} />
+                <AccessList title="Not Eligible" icon={X} campers={notEligible} />
+              </section>
+
+              <section className="grid gap-5 lg:grid-cols-2">
+                <div className="glass-panel rounded-lg p-5">
+                  <h2 className="mb-4 flex items-center gap-2 text-xl font-extrabold"><Plus className="accent-text" /> Register Camper</h2>
+                  <div className="grid gap-3">
+                    <TextInput icon={Users} placeholder="Camper name" value={newCamper.name} onChange={(event) => setNewCamper({ ...newCamper, name: event.target.value })} />
+                    <TextInput icon={ScanLine} placeholder="Scan NFC card ID" value={newCamper.nfc_id} onChange={(event) => setNewCamper({ ...newCamper, nfc_id: event.target.value })} />
+                    <button className="app-button focus-ring rounded px-5 py-3 font-extrabold" onClick={registerCamper}>Register</button>
+                  </div>
+                </div>
+
+                <div className="glass-panel rounded-lg p-5">
+                  <h2 className="mb-4 flex items-center gap-2 text-xl font-extrabold"><Settings className="accent-text" /> Backend Settings</h2>
+                  <SetupPanel config={config} saveConfig={saveConfig} embedded />
+                </div>
+              </section>
+
+              <section className="glass-panel rounded-lg p-5">
+                <h2 className="mb-4 flex items-center gap-2 text-xl font-extrabold"><PencilLine className="accent-text" /> Data Correction Panel</h2>
+                <div className="grid gap-4 lg:grid-cols-[1fr_12rem_10rem]">
+                  <select className="focus-ring rounded border line-border bg-transparent px-3 py-3 font-bold" value={correction.camper_id} onChange={(event) => setCorrection({ ...correction, camper_id: event.target.value })}>
+                    <option value="">Select camper</option>
+                    {campers.map((camper) => <option key={camper.id} value={camper.id}>{camper.name}</option>)}
+                  </select>
+                  <input className="focus-ring rounded border line-border bg-transparent px-3 py-3 font-bold" type="date" value={correction.entry_date} onChange={(event) => setCorrection({ ...correction, entry_date: event.target.value })} />
+                  <input className="focus-ring rounded border line-border bg-transparent px-3 py-3 font-bold" type="number" placeholder="Manual pts" value={correction.manual_points_adjustment} onChange={(event) => setCorrection({ ...correction, manual_points_adjustment: event.target.value })} />
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  {[...learningKeys, ...hanhagaKeys].map((key) => (
+                    <CheckboxTile key={key} label={dailyFields[key]} checked={correction[key]} onChange={(value) => setCorrection({ ...correction, [key]: value })} />
+                  ))}
+                </div>
+                <button className="app-button focus-ring mt-4 inline-flex items-center gap-2 rounded px-5 py-3 font-extrabold" onClick={saveCorrection}><Save size={18} /> Save Correction</button>
+              </section>
+
+              <section className="glass-panel rounded-lg p-5">
+                <h2 className="mb-4 flex items-center gap-2 text-xl font-extrabold"><Gauge className="accent-text" /> System Config Rules</h2>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  {Object.entries(rules).map(([key, value]) => (
+                    <label key={key} className="grid gap-1">
+                      <span className="muted-text text-xs font-extrabold uppercase tracking-[0.1em]">{key}</span>
                       <input
-                        class="focusable rounded border line-border bg-transparent px-3 py-3 font-bold"
-                        value="${escapeHtml(value ?? "")}"
-                        onchange="state.rules['${escapeHtml(key)}']=this.value"
+                        className="focus-ring rounded border line-border bg-transparent px-3 py-3 font-bold"
+                        value={value ?? ''}
+                        onChange={(event) => setRules({ ...rules, [key]: event.target.value })}
                       />
                     </label>
-                  `).join("")}
+                  ))}
                 </div>
-              `
-              : `
-                <p class="muted font-bold">No config row found yet. Add fields in Supabase or insert the first row there.</p>
-              `
-          }
-
-          <button class="btn focusable mt-4 inline-flex items-center gap-2 px-5 py-3" onclick="saveRules()">
-            ${icon("save", 18)} Save Rules
-          </button>
-        </section>
-      `;
-    }
-
-    async function saveRules() {
-      const payload = { ...state.rules };
-
-      let result;
-      if (payload.id) {
-        result = await state.supabase
-          .from("mivtza_config")
-          .update(payload)
-          .eq("id", payload.id);
-      } else {
-        result = await state.supabase
-          .from("mivtza_config")
-          .upsert(payload);
+                <div className="mt-4 flex gap-3">
+                  <button className="app-button focus-ring inline-flex items-center gap-2 rounded px-5 py-3 font-extrabold" onClick={saveRules}><Save size={18} /> Save Rules</button>
+                </div>
+              </section>
+            </div>
+          </Shell>
+        );
       }
 
-      state.message = result.error ? result.error.message : "System rules saved.";
-      renderAdmin();
-    }
+      function AccessList({ title, icon: Icon, campers }) {
+        return (
+          <div className="glass-panel rounded-lg p-5">
+            <h2 className="mb-4 flex items-center gap-2 text-lg font-extrabold"><Icon className="accent-text" /> {title}</h2>
+            <div className="grid gap-2">
+              {campers.length === 0 && <p className="muted-text text-sm font-semibold">No campers in this group.</p>}
+              {campers.map((camper) => (
+                <div key={camper.id} className="flex items-center justify-between rounded border line-border px-3 py-2">
+                  <span className="font-bold">{camper.name}</span>
+                  <span className="muted-text text-sm font-semibold">{camper.weekly_points} pts</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      }
 
-    window.addEventListener("hashchange", render);
+      function App() {
+        const { client, config, saveConfig } = useSupabase();
+        const [camper, setCamper] = useState(null);
+        const isAdmin = window.location.pathname.endsWith('/admin') || window.location.search.includes('admin');
 
-    initSupabase();
-    render();
-  </script>
-</body>
+        if (isAdmin) {
+          return (
+            <AdminGate config={config}>
+              <AdminDashboard client={client} config={config} saveConfig={saveConfig} />
+            </AdminGate>
+          );
+        }
+
+        if (camper) return <CamperDashboard client={client} camper={camper} onLogout={() => setCamper(null)} />;
+        return <LoginScreen client={client} config={config} saveConfig={saveConfig} onCamper={setCamper} />;
+      }
+
+      createRoot(document.getElementById('root')).render(<App />);
+    </script>
+  </body>
 </html>
