@@ -448,7 +448,7 @@
         );
       }
 
-      function LoginScreen({ onCamper }) {
+      function LoginScreen({ onCamper, onAdmin }) {
         const [scan, setScan] = useState('');
         const [busy, setBusy] = useState(false);
         const [error, setError] = useState('');
@@ -456,21 +456,32 @@
         const [nfcListening, setNfcListening] = useState(false);
         const [nfcMessage, setNfcMessage] = useState('');
         const [showManual, setShowManual] = useState(false);
-        const inputRef = useRef(null);
+        const manualInputRef = useRef(null);
         const ndefRef = useRef(null);
+        const scanBufferRef = useRef('');
+        const fetchCamperRef = useRef(null);
 
-        // Keep hidden input focused for USB/keyboard-wedge scanners.
-        // inputMode="none" prevents the mobile soft keyboard from appearing
-        // even when the input is focused — the only time we want the keyboard
-        // is when the user explicitly taps "Enter Manually".
+        // Global keydown listener captures USB/keyboard-wedge scanner strokes without
+        // ever focusing an input — so the mobile soft keyboard never appears at all.
         useEffect(() => {
-          if (nfcListening) { inputRef.current?.blur(); return; }
-          if (!showManual) inputRef.current?.focus();
-          const id = window.setInterval(() => {
-            if (!busy && !nfcListening && !showManual) inputRef.current?.focus();
-          }, 1200);
-          return () => window.clearInterval(id);
-        }, [busy, nfcListening, showManual]);
+          if (showManual) return; // manual input handles its own typing
+          let timer = null;
+          const onKey = (e) => {
+            if (showManual || busy) return;
+            if (e.key === 'Enter') {
+              const buf = scanBufferRef.current.trim();
+              scanBufferRef.current = '';
+              clearTimeout(timer);
+              if (buf && fetchCamperRef.current) fetchCamperRef.current(buf);
+            } else if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+              scanBufferRef.current += e.key;
+              clearTimeout(timer);
+              timer = setTimeout(() => { scanBufferRef.current = ''; }, 400);
+            }
+          };
+          document.addEventListener('keydown', onKey);
+          return () => { document.removeEventListener('keydown', onKey); clearTimeout(timer); };
+        }, [showManual, busy]);
 
         const fetchCamper = async (nfcId) => {
           setBusy(true);
@@ -480,11 +491,11 @@
           try {
             const target = normalizeNfcId(nfcId);
 
-            // Admin card — local check, no network.
+            // Admin card — local check, no network, no page reload.
             const adminCards = getAdminCards();
             if (adminCards.some((id) => normalizeNfcId(id) === target)) {
-              sessionStorage.setItem('mivtza_admin_unlocked', '1');
-              window.location.href = window.location.pathname + '?admin=1';
+              onAdmin();
+              setBusy(false);
               return;
             }
 
@@ -492,15 +503,18 @@
             setBusy(false);
             setScan('');
             if (fetchError) { setError(`Connection error: ${fetchError.message}`); return; }
-            if (!data || data.length === 0) { setError(`No campers found — check Supabase connection.`); return; }
+            if (!data || data.length === 0) { setError('No campers found — check Supabase connection.'); return; }
             const match = data.find((row) => normalizeNfcId(row.nfc_id) === target);
             if (!match) { setCardNotFound(true); return; }
             onCamper(match);
           } catch (err) {
-            setBusy(false); setScan(''); setNfcMessage('');
+            setBusy(false); setScan('');
             setError(`Error: ${err.message}`);
           }
         };
+
+        // Keep ref current so the keydown closure always calls the latest version
+        useEffect(() => { fetchCamperRef.current = fetchCamper; });
 
         const explainNfcError = (scanError) => {
           if (!('NDEFReader' in window)) return 'Web NFC is not available on this browser. Use Android Chrome.';
@@ -532,10 +546,6 @@
             setNfcListening(false);
             setNfcMessage(explainNfcError(scanError));
           }
-        };
-
-        const onKeyDown = (event) => {
-          if (event.key === 'Enter' && scan.trim()) fetchCamper(scan);
         };
 
         return (
@@ -615,26 +625,27 @@
                   {nfcListening ? 'Hold your card to the back of this device' : 'Tap "Enable NFC" then hold your card to the back of the device'}
                 </p>
 
-                {/* Hidden input — focused for USB scanner; inputMode=none suppresses soft keyboard */}
-                <input
-                  ref={inputRef}
-                  value={scan}
-                  onChange={(e) => setScan(e.target.value)}
-                  onKeyDown={onKeyDown}
-                  inputMode={showManual ? 'text' : 'none'}
-                  className={showManual
-                    ? 'glass-panel focus-ring w-full rounded-lg px-5 py-4 text-center text-lg font-bold outline-none shadow-glow'
-                    : 'fixed top-0 left-0 h-px w-px opacity-0 pointer-events-none'}
-                  placeholder="Type card ID, press Enter"
-                  tabIndex={showManual ? 0 : -1}
-                />
-                {showManual && scan && (
-                  <button className="app-button focus-ring -mt-3 rounded px-5 py-3 font-extrabold" onClick={() => fetchCamper(scan)}>
-                    Submit
-                  </button>
+                {/* Manual entry — only visible when requested, uses its own ref */}
+                {showManual && (
+                  <div className="flex gap-2">
+                    <input
+                      ref={manualInputRef}
+                      value={scan}
+                      onChange={(e) => setScan(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && scan.trim()) { fetchCamper(scan); setScan(''); } }}
+                      autoFocus
+                      className="glass-panel focus-ring flex-1 rounded-lg px-5 py-4 text-center text-lg font-bold outline-none shadow-glow"
+                      placeholder="Type card ID, press Enter"
+                    />
+                    {scan && (
+                      <button className="app-button focus-ring rounded-lg px-5 py-4 font-extrabold" onClick={() => { fetchCamper(scan); setScan(''); }}>
+                        Go
+                      </button>
+                    )}
+                  </div>
                 )}
 
-                {/* Technical error (not the not-found modal) */}
+                {/* Technical error */}
                 {error && (
                   <p className="rounded-xl border border-red-400/40 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-500">
                     {error}
@@ -1387,7 +1398,13 @@
 
       function App() {
         const [camper, setCamper] = useState(null);
-        const isAdmin = window.location.pathname.endsWith('/admin') || window.location.search.includes('admin');
+        const [adminMode, setAdminMode] = useState(false);
+        const isAdmin = adminMode || window.location.pathname.endsWith('/admin') || window.location.search.includes('admin');
+
+        const goAdmin = () => {
+          sessionStorage.setItem('mivtza_admin_unlocked', '1');
+          setAdminMode(true);
+        };
 
         if (isAdmin) {
           return (
@@ -1398,7 +1415,7 @@
         }
 
         if (camper) return <ErrorBoundary><CamperDashboard camper={camper} onLogout={() => setCamper(null)} /></ErrorBoundary>;
-        return <LoginScreen onCamper={setCamper} />;
+        return <LoginScreen onCamper={setCamper} onAdmin={goAdmin} />;
       }
 
       createRoot(document.getElementById('root')).render(<App />);
