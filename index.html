@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>American Express Mivtza</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💳</text></svg>" />
+    <link rel="manifest" href="./manifest.json" />
+    <meta name="theme-color" content="#c89c3b" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="AmEx Mivtza" />
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -190,9 +196,12 @@
       } from 'https://esm.sh/lucide-react@0.468.0?deps=react@18.3.1';
       import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 
-      // Canonical Supabase table name for camper roster records.
-      // Change this in ONE place if your schema uses a different table name.
-      const CAMPER_TABLE = 'camper_profiles';
+      // camper_profiles is a Supabase VIEW that includes computed columns like
+      // weekly_points, total_points, weekly_event_status. Read from it.
+      // campers is the underlying base TABLE. All writes (insert/update/delete)
+      // go there — you cannot insert into a view.
+      const CAMPER_READ_TABLE  = 'camper_profiles';
+      const CAMPER_WRITE_TABLE = 'campers';
 
       const dailyFields = {
         learn_maamar: 'Maamar',
@@ -417,12 +426,12 @@
           setError('');
           setNfcMessage('');
           const target = normalizeNfcId(nfcId);
-          const { data, error: fetchError, status, statusText } = await client.from(CAMPER_TABLE).select('*');
+          const { data, error: fetchError, status, statusText } = await client.from(CAMPER_READ_TABLE).select('*');
           setBusy(false);
           setScan('');
           // eslint-disable-next-line no-console
           console.log('[Mivtza] fetchCamper', {
-            table: CAMPER_TABLE,
+            table: CAMPER_READ_TABLE,
             supabaseUrl: config.url,
             httpStatus: status,
             httpStatusText: statusText,
@@ -436,12 +445,12 @@
             return;
           }
           if (!data || data.length === 0) {
-            setError(`Connected to Supabase, but the "${CAMPER_TABLE}" table returned 0 rows. This usually means the URL/anon key saved on this device points to a different project than the one you're viewing in the dashboard, or Row Level Security is blocking anonymous reads.`);
+            setError(`Connected to Supabase, but the "${CAMPER_READ_TABLE}" table returned 0 rows. This usually means the URL/anon key saved on this device points to a different project than the one you're viewing in the dashboard, or Row Level Security is blocking anonymous reads.`);
             return;
           }
           const match = data.find((row) => normalizeNfcId(row.nfc_id) === target);
           if (!match) {
-            setError(`No camper found with that card. Scanned ID "${nfcId}" didn't match any of the ${data.length} camper(s) loaded from "${CAMPER_TABLE}". Open the browser console for the full comparison list.`);
+            setError(`No camper found with that card. Scanned ID "${nfcId}" didn't match any of the ${data.length} camper(s) loaded from "${CAMPER_READ_TABLE}". Open the browser console for the full comparison list.`);
             return;
           }
           onCamper(match);
@@ -739,7 +748,7 @@
         const load = async () => {
           setLoading(true);
           const [{ data: roster }, { data: configRow }] = await Promise.all([
-            client.from(CAMPER_TABLE).select('*').order('name'),
+            client.from(CAMPER_READ_TABLE).select('*').order('name'),
             client.from('mivtza_config').select('*').limit(1).maybeSingle(),
           ]);
           setCampers(roster || []);
@@ -790,7 +799,7 @@
             nfc_id: newCamper.nfc_id.trim(),
             card_status: newCamper.card_status || 'Gold',
           };
-          const { error } = await client.from(CAMPER_TABLE).insert(payload);
+          const { error } = await client.from(CAMPER_WRITE_TABLE).insert(payload);
           if (error) {
             notify(`Register failed: ${error.message}`, 'error');
           } else {
@@ -803,7 +812,7 @@
         // ── Delete ──────────────────────────────────────────────────────────
         const deleteCamper = async (camper) => {
           if (!window.confirm(`Delete "${camper.name}"? This cannot be undone.`)) return;
-          const { error } = await client.from(CAMPER_TABLE).delete().eq('id', camper.id);
+          const { error } = await client.from(CAMPER_WRITE_TABLE).delete().eq('id', camper.id);
           if (error) {
             notify(`Delete failed: ${error.message}`, 'error');
           } else {
@@ -816,7 +825,7 @@
         const saveEdit = async () => {
           if (!editRow) return;
           const { error } = await client
-            .from(CAMPER_TABLE)
+            .from(CAMPER_WRITE_TABLE)
             .update({ name: editRow.name, nfc_id: editRow.nfc_id, card_status: editRow.card_status })
             .eq('id', editRow.id);
           if (error) {
@@ -836,7 +845,7 @@
           [...learningKeys, ...hanhagaKeys].forEach((key) => (entryPayload[key] = correction[key]));
           const { error: entryError } = await client.from('daily_entries').upsert(entryPayload, { onConflict: 'camper_id,entry_date' });
           const { error: camperError } = await client
-            .from(CAMPER_TABLE)
+            .from(CAMPER_WRITE_TABLE)
             .update({ manual_points_adjustment: Number(correction.manual_points_adjustment || 0) })
             .eq('id', selected.id);
           notify(entryError?.message || camperError?.message || 'Correction saved ✓', (entryError || camperError) ? 'error' : 'info');
@@ -1097,6 +1106,16 @@
         script.src = URL.createObjectURL(blob);
         document.body.appendChild(script);
       })();
+    </script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('./sw.js').then(
+            (reg) => console.log('[Mivtza] SW registered, scope:', reg.scope),
+            (err) => console.warn('[Mivtza] SW registration failed:', err)
+          );
+        });
+      }
     </script>
   </body>
 </html>
