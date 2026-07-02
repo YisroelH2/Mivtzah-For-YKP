@@ -275,31 +275,79 @@
       const CAMPER_READ_TABLE  = 'camper_profiles';
       const CAMPER_WRITE_TABLE = 'campers';
 
-      const dailyFields = {
-        learn_maamar: 'Maamar',
-        learn_chumash: 'Chumash',
-        learn_tanya: 'Tanya',
-        learn_rambam: 'Rambam',
-        learn_hayom_yom: 'Hayom Yom',
-        hanhaga_negel_vasser: 'Negel Vasser',
-        hanhaga_mikvah: 'Mikvah',
-        hanhaga_brochos: 'Brochos & Krias Shema',
-        hanhaga_tehillim: 'Tehillim',
-        hanhaga_bentching: 'Bentching',
-        hanhaga_bendel: 'Bendel',
+      const today = () => new Date().toISOString().slice(0, 10);
+
+      // ── App config defaults (match the Mivtza Amek infographic) ──────────────
+      // Config is stored in mivtza_config.config_json in Supabase so any device
+      // can read it. The admin panel provides a full structured editor.
+      //
+      // REQUIRED SQL (run once in Supabase SQL editor):
+      //   ALTER TABLE mivtza_config ADD COLUMN IF NOT EXISTS config_json text;
+      //   ALTER TABLE daily_entries  ADD COLUMN IF NOT EXISTS entry_data   jsonb;
+      //   ALTER TABLE daily_entries  ADD COLUMN IF NOT EXISTS teacher_data jsonb;
+      //
+      const DEFAULT_CONFIG = {
+        learning_items: [
+          { db_key: 'learn_maamar',    label: 'Maamar Baal Peh', points: 35 },
+          { db_key: 'learn_chumash',   label: 'Chumash',         points: 20 },
+          { db_key: 'learn_tanya',     label: 'Tanya',           points: 20 },
+          { db_key: 'learn_rambam',    label: 'Rambam',          points: 20 },
+          { db_key: 'learn_hayom_yom', label: 'Hayom Yom',       points:  5 },
+        ],
+        hanhaga_items: [
+          { db_key: 'hanhaga_negel_vasser', label: 'Negel Vasser' },
+          { db_key: 'hanhaga_mikvah',       label: 'Mikvah' },
+          { db_key: 'hanhaga_brochos',      label: 'Brochos & Krias Shema with Hat & Jacket' },
+          { db_key: 'hanhaga_tehillim',     label: 'Tehillim in Tefillin' },
+          { db_key: 'hanhaga_bentching',    label: "Krias Shema She\'al Hamitah with Hat & Jacket" },
+          { db_key: 'hanhaga_bendel',       label: 'Bendel' },
+        ],
+        hanhaga_bonus_per_item: 5,
+        teacher_items: [],
+        tier_platinum:             1800,
+        tier_black:                3600,
+        standard_event_threshold:   400,
+        vip_event_threshold:        700,
       };
 
-      const learningKeys = ['learn_maamar', 'learn_chumash', 'learn_tanya', 'learn_rambam', 'learn_hayom_yom'];
-      const hanhagaKeys = [
-        'hanhaga_negel_vasser',
-        'hanhaga_mikvah',
-        'hanhaga_brochos',
-        'hanhaga_tehillim',
-        'hanhaga_bentching',
-        'hanhaga_bendel',
-      ];
-      const blankEntry = Object.fromEntries([...learningKeys, ...hanhagaKeys].map((key) => [key, false]));
-      const today = () => new Date().toISOString().slice(0, 10);
+      // Known existing columns in daily_entries — anything outside this set
+      // is stored in entry_data JSONB so the schema stays stable.
+      const KNOWN_ENTRY_COLUMNS = new Set([
+        'learn_maamar','learn_chumash','learn_tanya','learn_rambam','learn_hayom_yom',
+        'hanhaga_negel_vasser','hanhaga_mikvah','hanhaga_brochos',
+        'hanhaga_tehillim','hanhaga_bentching','hanhaga_bendel',
+      ]);
+
+      function getBlankEntry(cfg) {
+        const entry = {};
+        const items = [
+          ...(cfg.learning_items || []),
+          ...(cfg.hanhaga_items || []),
+          ...(cfg.teacher_items || []),
+        ];
+        items.forEach((item) => { entry[item.db_key] = false; });
+        return entry;
+      }
+
+      function calculateScore(entry, cfg) {
+        const c = cfg || DEFAULT_CONFIG;
+        const learningTotal = (c.learning_items || []).reduce(
+          (sum, item) => sum + (entry[item.db_key] ? Number(item.points || 0) : 0), 0);
+        const hanhagaCount = (c.hanhaga_items || []).filter((item) => entry[item.db_key]).length;
+        const teacherTotal = (c.teacher_items || []).reduce(
+          (sum, item) => sum + (entry[item.db_key] ? Number(item.points || 0) : 0), 0);
+        const bonus = hanhagaCount * Number(c.hanhaga_bonus_per_item ?? 5);
+        return learningTotal + bonus + teacherTotal;
+      }
+
+      // Legacy aliases so nothing else breaks
+      const blankEntry   = getBlankEntry(DEFAULT_CONFIG);
+      const learningKeys = DEFAULT_CONFIG.learning_items.map((i) => i.db_key);
+      const hanhagaKeys  = DEFAULT_CONFIG.hanhaga_items.map((i) => i.db_key);
+      const dailyFields  = Object.fromEntries(
+        [...DEFAULT_CONFIG.learning_items, ...DEFAULT_CONFIG.hanhaga_items]
+          .map((i) => [i.db_key, i.label])
+      );
 
       // ── Supabase connection (hardcoded — anon key is safe to be public) ──────
       const SUPABASE_URL  = 'https://mgiwefsbvixlnlokplpj.supabase.co';
@@ -359,25 +407,7 @@
           .replace(/[^a-z0-9]/g, '');
       }
 
-      function getWeight(config, field) {
-        const candidates = [
-          field,
-          `${field}_points`,
-          field.replace('learn_', 'points_'),
-          field.replace('hanhaga_', 'points_'),
-        ];
-        for (const candidate of candidates) {
-          const value = Number(config?.[candidate]);
-          if (Number.isFinite(value) && value > 0) return value;
-        }
-        return learningKeys.includes(field) ? 10 : 0;
-      }
 
-      function calculateScore(entry, config) {
-        const learningTotal = learningKeys.reduce((sum, key) => sum + (entry[key] ? getWeight(config, key) : 0), 0);
-        const hanhagaCount = hanhagaKeys.filter((key) => entry[key]).length;
-        return Math.round(learningTotal * (1 + hanhagaCount * 0.05));
-      }
 
       function IconButton({ icon: Icon, label, className = '', ...props }) {
         return (
@@ -789,34 +819,46 @@
       }
 
       function CamperDashboard({ camper, onLogout }) {
-        const [entry, setEntry] = useState(blankEntry);
-        const [config, setConfig] = useState(null);
+        const [appConfig, setAppConfig] = useState(DEFAULT_CONFIG);
+        const [entry, setEntry] = useState(() => getBlankEntry(DEFAULT_CONFIG));
         const [approved, setApproved] = useState(false);
         const toast = useToast();
         const status = normalizeStatus(camper.card_status);
 
         useEffect(() => {
-          supabase.from('mivtza_config').select('*').limit(1).maybeSingle().then(({ data }) => setConfig(data || {}));
+          supabase.from('mivtza_config').select('config_json').limit(1).maybeSingle().then(({ data }) => {
+            if (data?.config_json) {
+              try {
+                const cfg = JSON.parse(data.config_json);
+                setAppConfig(cfg);
+                setEntry(getBlankEntry(cfg));
+              } catch {}
+            }
+          });
         }, []);
 
-        const score = calculateScore(entry, config);
+        const score = calculateScore(entry, appConfig);
 
         const submit = async () => {
+          // Split entry into known DB columns vs extra items stored as JSONB
+          const known = {}, extra = {};
+          Object.entries(entry).forEach(([k, v]) => {
+            if (KNOWN_ENTRY_COLUMNS.has(k)) known[k] = v; else extra[k] = v;
+          });
           const { error: insertError } = await supabase.from('daily_entries').insert({
             camper_id: camper.id,
             entry_date: today(),
-            ...entry,
+            ...known,
+            ...(Object.keys(extra).length ? { entry_data: extra } : {}),
           });
-          if (insertError) {
-            toast.error(insertError.message);
-            return;
-          }
+          if (insertError) { toast.error(insertError.message); return; }
           setApproved(true);
-          window.setTimeout(() => {
-            setApproved(false);
-            onLogout();
-          }, 2000);
+          window.setTimeout(() => { setApproved(false); onLogout(); }, 2000);
         };
+
+        const maxScore = (appConfig.learning_items || []).reduce((s, i) => s + Number(i.points || 0), 0)
+          + (appConfig.hanhaga_items || []).length * Number(appConfig.hanhaga_bonus_per_item ?? 5)
+          + (appConfig.teacher_items || []).reduce((s, i) => s + Number(i.points || 0), 0);
 
         return (
           <Shell status={status} onLogout={onLogout}>
@@ -836,28 +878,57 @@
 
               <div className="grid gap-5 lg:grid-cols-[1fr_20rem]">
                 <section className="grid gap-5">
+                  {/* Learning items */}
                   <div className="glass-panel rounded-lg p-5">
-                    <h2 className="mb-4 flex items-center gap-2 text-xl font-extrabold"><Sparkles className="accent-text" /> Learning Points</h2>
+                    <h2 className="mb-1 flex items-center gap-2 text-xl font-extrabold"><Sparkles className="accent-text" /> Learning Points</h2>
+                    <p className="muted-text mb-4 text-xs font-semibold">
+                      {(appConfig.learning_items || []).map((i) => `${i.label} = ${i.points}`).join(' · ')}
+                    </p>
                     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                      {learningKeys.map((key) => (
-                        <CheckboxTile key={key} label={dailyFields[key]} checked={entry[key]} onChange={(value) => setEntry({ ...entry, [key]: value })} />
+                      {(appConfig.learning_items || []).map((item) => (
+                        <CheckboxTile key={item.db_key} label={`${item.label} · ${item.points}pts`} checked={entry[item.db_key] || false} onChange={(v) => setEntry({ ...entry, [item.db_key]: v })} />
                       ))}
                     </div>
                   </div>
+
+                  {/* Hanhagos */}
                   <div className="glass-panel rounded-lg p-5">
-                    <h2 className="mb-4 flex items-center gap-2 text-xl font-extrabold"><ShieldCheck className="accent-text" /> Daily Hanhagos</h2>
+                    <h2 className="mb-1 flex items-center gap-2 text-xl font-extrabold"><ShieldCheck className="accent-text" /> Daily Hanhagos</h2>
+                    <p className="muted-text mb-4 text-xs font-semibold">
+                      Each hanhaga = +{appConfig.hanhaga_bonus_per_item ?? 5} bonus pts · Max {(appConfig.hanhaga_items || []).length * Number(appConfig.hanhaga_bonus_per_item ?? 5)} pts
+                    </p>
                     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                      {hanhagaKeys.map((key) => (
-                        <CheckboxTile key={key} label={dailyFields[key]} checked={entry[key]} onChange={(value) => setEntry({ ...entry, [key]: value })} />
+                      {(appConfig.hanhaga_items || []).map((item) => (
+                        <CheckboxTile key={item.db_key} label={item.label} checked={entry[item.db_key] || false} onChange={(v) => setEntry({ ...entry, [item.db_key]: v })} />
                       ))}
                     </div>
                   </div>
+
+                  {/* Teacher-marked items (read-only for camper) */}
+                  {(appConfig.teacher_items || []).length > 0 && (
+                    <div className="glass-panel rounded-lg p-5">
+                      <h2 className="mb-1 flex items-center gap-2 text-xl font-extrabold"><BadgeCheck className="accent-text" /> Teacher Credits</h2>
+                      <p className="muted-text mb-4 text-xs font-semibold">Your teacher fills these in — they appear here after being marked.</p>
+                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                        {(appConfig.teacher_items || []).map((item) => (
+                          <CheckboxTile key={item.db_key} label={`${item.label}${item.points ? ` · ${item.points}pts` : ''}`} checked={entry[item.db_key] || false} onChange={(v) => setEntry({ ...entry, [item.db_key]: v })} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </section>
 
                 <aside className="glass-panel sticky top-5 h-fit rounded-lg p-5 shadow-luxury">
-                  <p className="muted-text text-xs font-extrabold uppercase tracking-[0.16em]">Estimated Daily Score</p>
-                  <p className="mt-3 text-6xl font-extrabold">{score}</p>
-                  <p className="muted-text mt-3 text-sm font-semibold">Learning total multiplied by 1.00 plus 0.05 for each selected Hanhaga.</p>
+                  <p className="muted-text text-xs font-extrabold uppercase tracking-[0.16em]">Daily Score</p>
+                  <p className="mt-3 text-6xl font-extrabold shimmer-text">{score}</p>
+                  <p className="muted-text mt-1 text-xs font-semibold">of {maxScore} possible today</p>
+                  <div className="mt-3 h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
+                    <div className="h-full rounded-full accent-bg transition-all" style={{ width: `${maxScore ? Math.min(100, Math.round(score / maxScore * 100)) : 0}%`, background: 'var(--accent)' }} />
+                  </div>
+                  <p className="muted-text mt-3 text-xs font-semibold">
+                    Learning: {(appConfig.learning_items||[]).reduce((s,i)=>s+(entry[i.db_key]?Number(i.points):0),0)} pts
+                    + Bonus: {(appConfig.hanhaga_items||[]).filter(i=>entry[i.db_key]).length} × {appConfig.hanhaga_bonus_per_item??5} = {(appConfig.hanhaga_items||[]).filter(i=>entry[i.db_key]).length * Number(appConfig.hanhaga_bonus_per_item??5)} pts
+                  </p>
                   <button className="app-button focus-ring mt-5 flex w-full items-center justify-center gap-2 rounded px-5 py-4 text-lg font-extrabold" onClick={submit}>
                     <BadgeCheck size={22} /> Submit
                   </button>
@@ -997,7 +1068,9 @@
       function AdminDashboard() {
         const toast = useToast();
         const [campers, setCampers] = useState([]);
-        const [rules, setRules] = useState({});
+        const [appConfig, setAppConfig] = useState(DEFAULT_CONFIG);
+        const [configId, setConfigId] = useState(null);
+        const [configAdminCards, setConfigAdminCards] = useState('');
         const [loading, setLoading] = useState(true);
         const [rosterSearch, setRosterSearch] = useState('');
 
@@ -1018,27 +1091,30 @@
         const rosterNdefRef = useRef(null);
 
         // New config rule
-        const [newRuleKey, setNewRuleKey] = useState('');
-        const [newRuleVal, setNewRuleVal] = useState('');
-
         const notify = (text, type = 'info') => type === 'error' ? toast.error(text) : toast.success(text);
 
         const load = async () => {
           setLoading(true);
           const [{ data: roster }, { data: configRow }] = await Promise.all([
             supabase.from(CAMPER_READ_TABLE).select('*').order('name'),
-            supabase.from('mivtza_config').select('*').limit(1).maybeSingle(),
+            supabase.from('mivtza_config').select('id,config_json,admin_cards').limit(1).maybeSingle(),
           ]);
           setCampers(roster || []);
-          setRules(configRow || {});
+          if (configRow) {
+            setConfigId(configRow.id || null);
+            setConfigAdminCards(configRow.admin_cards || '');
+            if (configRow.config_json) {
+              try { setAppConfig(JSON.parse(configRow.config_json)); } catch {}
+            }
+          }
           setLoading(false);
         };
 
         useEffect(() => { load(); }, []);
 
-        const vip = campers.filter((c) => Number(c.weekly_points) >= Number(rules.vip_event_threshold ?? 700));
-        const standard = campers.filter((c) => Number(c.weekly_points) >= Number(rules.standard_event_threshold ?? 400) && Number(c.weekly_points) < Number(rules.vip_event_threshold ?? 700));
-        const notEligible = campers.filter((c) => Number(c.weekly_points) < Number(rules.standard_event_threshold ?? 400));
+        const vip = campers.filter((c) => Number(c.weekly_points) >= Number(appConfig.vip_event_threshold ?? 700));
+        const standard = campers.filter((c) => Number(c.weekly_points) >= Number(appConfig.standard_event_threshold ?? 400) && Number(c.weekly_points) < Number(appConfig.vip_event_threshold ?? 700));
+        const notEligible = campers.filter((c) => Number(c.weekly_points) < Number(appConfig.standard_event_threshold ?? 400));
 
         // ── NFC scan for registration ───────────────────────────────────────
         const startRegNfcScan = async () => {
@@ -1115,55 +1191,45 @@
             .from(CAMPER_WRITE_TABLE)
             .update({ name: editRow.name, nfc_id: editRow.nfc_id })
             .eq('id', editRow.id);
-          if (error) {
-            notify(`Save failed: ${error.message}`, 'error');
-          } else {
-            setEditRow(null);
-            notify('Camper updated ✓');
-            load();
-          }
+          if (error) toast.error(`Save failed: ${error.message}`);
+          else { setEditRow(null); toast.success('Camper updated ✓'); load(); }
         };
 
         // ── Correction ──────────────────────────────────────────────────────
         const saveCorrection = async () => {
           const selected = campers.find((c) => String(c.id) === String(correction.camper_id));
           if (!selected) return;
-          const entryPayload = { camper_id: selected.id, entry_date: correction.entry_date };
-          [...learningKeys, ...hanhagaKeys].forEach((key) => (entryPayload[key] = correction[key]));
-          const { error: entryError } = await supabase.from('daily_entries').upsert(entryPayload, { onConflict: 'camper_id,entry_date' });
+          // Build entry payload: known columns go direct, extras go to entry_data
+          const allItems = [...(appConfig.learning_items||[]), ...(appConfig.hanhaga_items||[]), ...(appConfig.teacher_items||[])];
+          const known = { camper_id: selected.id, entry_date: correction.entry_date };
+          const extra = {};
+          allItems.forEach((item) => {
+            if (KNOWN_ENTRY_COLUMNS.has(item.db_key)) known[item.db_key] = correction[item.db_key] || false;
+            else extra[item.db_key] = correction[item.db_key] || false;
+          });
+          if (Object.keys(extra).length) known.entry_data = extra;
+          const { error: entryError } = await supabase.from('daily_entries').upsert(known, { onConflict: 'camper_id,entry_date' });
           const { error: camperError } = await supabase
             .from(CAMPER_WRITE_TABLE)
             .update({ manual_points_adjustment: Number(correction.manual_points_adjustment || 0) })
             .eq('id', selected.id);
-          notify(entryError?.message || camperError?.message || 'Correction saved ✓', (entryError || camperError) ? 'error' : 'info');
-          load();
+          if (entryError || camperError) toast.error(entryError?.message || camperError?.message);
+          else { toast.success('Correction saved ✓'); load(); }
         };
 
-        const saveRules = async () => {
-          const payload = { ...rules };
-          const id = payload.id;
-          const query = id ? supabase.from('mivtza_config').update(payload).eq('id', id) : supabase.from('mivtza_config').upsert(payload);
-          const { error } = await query;
-          notify(error ? `Save failed: ${error.message}` : 'System rules saved ✓', error ? 'error' : 'info');
-          load();
-        };
-
-        const addRule = () => {
-          const key = newRuleKey.trim();
-          if (!key) return;
-          setRules({ ...rules, [key]: newRuleVal });
-          setNewRuleKey(''); setNewRuleVal('');
-        };
-
-        const deleteRule = (key) => {
-          const next = { ...rules };
-          delete next[key];
-          setRules(next);
+        // ── Save app config to mivtza_config.config_json ────────────────────
+        const saveConfig = async (cfg) => {
+          const payload = { config_json: JSON.stringify(cfg), ...(configAdminCards ? { admin_cards: configAdminCards } : {}) };
+          const { error } = configId
+            ? await supabase.from('mivtza_config').update(payload).eq('id', configId)
+            : await supabase.from('mivtza_config').upsert(payload);
+          if (error) toast.error(`Save failed: ${error.message}`);
+          else { toast.success('Config saved ✓'); setAppConfig(cfg); load(); }
         };
 
         const startRosterNfcScan = async () => {
           if (!('NDEFReader' in window) || !window.isSecureContext) {
-            notify('Web NFC not available — type in the search box instead.', 'error'); return;
+            toast.warning('Web NFC not available — type in the search box instead.'); return;
           }
           try {
             const ndef = new NDEFReader();
@@ -1177,19 +1243,19 @@
             setRosterNfcListening(true);
           } catch (err) {
             setRosterNfcListening(false);
-            notify(`NFC error: ${err.message}`, 'error');
+            toast.error(`NFC error: ${err.message}`);
           }
         };
 
         const adjustPoints = async (delta) => {
           const selected = campers.find((c) => String(c.id) === String(correction.camper_id));
-          if (!selected) { notify('Select a camper first.', 'error'); return; }
+          if (!selected) { toast.error('Select a camper first.'); return; }
           const pts = Number(quickPoints);
-          if (!pts) { notify('Enter a points amount.', 'error'); return; }
-          const current = Number(selected.manual_points_adjustment || 0);
-          const next = current + (delta * pts);
+          if (!pts) { toast.error('Enter a points amount.'); return; }
+          const next = Number(selected.manual_points_adjustment || 0) + (delta * pts);
           const { error } = await supabase.from(CAMPER_WRITE_TABLE).update({ manual_points_adjustment: next }).eq('id', selected.id);
-          if (error) { notify(`Failed: ${error.message}`, 'error'); } else { notify(`${delta > 0 ? '+' : ''}${delta * pts} pts applied to ${selected.name} ✓`); load(); }
+          if (error) toast.error(`Failed: ${error.message}`);
+          else { toast.success(`${delta > 0 ? '+' : ''}${delta * pts} pts applied to ${selected.name} ✓`); load(); }
         };
 
         return (
@@ -1385,59 +1451,162 @@
 
                 {/* Daily checkboxes */}
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  {[...learningKeys, ...hanhagaKeys].map((key) => (
-                    <CheckboxTile key={key} label={dailyFields[key]} checked={correction[key]} onChange={(value) => setCorrection({ ...correction, [key]: value })} />
+                  {[...(appConfig.learning_items||[]), ...(appConfig.hanhaga_items||[]), ...(appConfig.teacher_items||[])].map((item) => (
+                    <CheckboxTile key={item.db_key} label={item.label + (item.points ? ` · ${item.points}pts` : '')} checked={correction[item.db_key]||false} onChange={(value) => setCorrection({ ...correction, [item.db_key]: value })} />
                   ))}
                 </div>
                 <button className="app-button focus-ring mt-4 inline-flex items-center gap-2 rounded px-5 py-3 font-extrabold" onClick={saveCorrection}><Save size={18} /> Save Entry + Manual Pts</button>
               </section>
 
+              {/* ── Structured App Configuration ── */}
               <section className="glass-panel rounded-lg p-5">
-                <h2 className="mb-4 flex items-center gap-2 text-xl font-extrabold"><Gauge className="accent-text" /> System Config Rules</h2>
-
-                {/* Add new rule */}
-                <div className="mb-4 flex flex-wrap gap-2 items-center">
-                  <input
-                    className="focus-ring flex-1 min-w-[140px] rounded border line-border bg-transparent px-3 py-2 font-bold text-sm"
-                    placeholder="Rule name (e.g. points_maamar)"
-                    value={newRuleKey}
-                    onChange={(e) => setNewRuleKey(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && addRule()}
-                  />
-                  <input
-                    className="focus-ring w-32 rounded border line-border bg-transparent px-3 py-2 font-bold text-sm"
-                    placeholder="Value"
-                    value={newRuleVal}
-                    onChange={(e) => setNewRuleVal(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && addRule()}
-                  />
-                  <button className="app-button focus-ring inline-flex items-center gap-1 rounded px-4 py-2 font-extrabold text-sm" onClick={addRule}>
-                    <Plus size={15} /> Add Rule
-                  </button>
-                </div>
-
-                {/* Existing rules */}
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  {Object.entries(rules).filter(([k]) => k !== 'id').map(([key, value]) => (
-                    <div key={key} className="grid gap-1">
-                      <div className="flex items-center justify-between">
-                        <span className="muted-text text-xs font-extrabold uppercase tracking-[0.1em]">{key}</span>
-                        <button onClick={() => deleteRule(key)} className="text-red-500 hover:scale-110" title="Delete rule"><Trash2 size={12} /></button>
-                      </div>
-                      <input
-                        className="focus-ring rounded border line-border bg-transparent px-3 py-2 font-bold text-sm"
-                        value={value ?? ''}
-                        onChange={(e) => setRules({ ...rules, [key]: e.target.value })}
-                      />
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-4 flex gap-3">
-                  <button className="app-button focus-ring inline-flex items-center gap-2 rounded px-5 py-3 font-extrabold" onClick={saveRules}><Save size={18} /> Save All Rules</button>
-                </div>
+                <h2 className="mb-1 flex items-center gap-2 text-xl font-extrabold"><Gauge className="accent-text" /> App Configuration</h2>
+                <p className="muted-text mb-5 text-xs font-semibold">All settings save to Supabase and sync to every device instantly. Labels, points, and items are fully customizable.</p>
+                <ConfigEditor config={appConfig} onSave={saveConfig} />
               </section>
             </div>
           </Shell>
+        );
+      }
+
+      // ── Structured Config Editor ────────────────────────────────────────────
+      function ConfigEditor({ config, onSave }) {
+        const [draft, setDraft] = useState(() => JSON.parse(JSON.stringify(config)));
+
+        useEffect(() => { setDraft(JSON.parse(JSON.stringify(config))); }, [config]);
+
+        const updateLearning = (idx, field, value) => {
+          const next = [...draft.learning_items];
+          next[idx] = { ...next[idx], [field]: field === 'points' ? Number(value) : value };
+          setDraft({ ...draft, learning_items: next });
+        };
+        const addLearning = () => setDraft({ ...draft, learning_items: [...(draft.learning_items||[]), { db_key: `learn_custom_${Date.now()}`, label: 'New Item', points: 10 }] });
+        const removeLearning = (idx) => setDraft({ ...draft, learning_items: draft.learning_items.filter((_,i) => i!==idx) });
+
+        const updateHanhaga = (idx, field, value) => {
+          const next = [...draft.hanhaga_items];
+          next[idx] = { ...next[idx], [field]: value };
+          setDraft({ ...draft, hanhaga_items: next });
+        };
+        const addHanhaga = () => setDraft({ ...draft, hanhaga_items: [...(draft.hanhaga_items||[]), { db_key: `hanhaga_custom_${Date.now()}`, label: 'New Hanhaga' }] });
+        const removeHanhaga = (idx) => setDraft({ ...draft, hanhaga_items: draft.hanhaga_items.filter((_,i) => i!==idx) });
+
+        const updateTeacher = (idx, field, value) => {
+          const next = [...(draft.teacher_items||[])];
+          next[idx] = { ...next[idx], [field]: field === 'points' ? Number(value) : value };
+          setDraft({ ...draft, teacher_items: next });
+        };
+        const addTeacher = () => setDraft({ ...draft, teacher_items: [...(draft.teacher_items||[]), { db_key: `teacher_custom_${Date.now()}`, label: 'New Teacher Item', points: 0 }] });
+        const removeTeacher = (idx) => setDraft({ ...draft, teacher_items: (draft.teacher_items||[]).filter((_,i) => i!==idx) });
+
+        const setNum = (field, value) => setDraft({ ...draft, [field]: Number(value) });
+
+        const learningTotal = (draft.learning_items||[]).reduce((s,i)=>s+Number(i.points||0),0);
+        const hanhagaMax = (draft.hanhaga_items||[]).length * Number(draft.hanhaga_bonus_per_item||5);
+        const teacherTotal = (draft.teacher_items||[]).reduce((s,i)=>s+Number(i.points||0),0);
+
+        return (
+          <div className="grid gap-6">
+            {/* ── Learning Items ── */}
+            <div>
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <h3 className="font-extrabold">📚 Learning Items</h3>
+                  <p className="muted-text text-xs">Total possible: <strong>{learningTotal} pts</strong></p>
+                </div>
+                <button onClick={addLearning} className="app-button focus-ring inline-flex items-center gap-1 rounded px-3 py-2 text-sm font-extrabold"><Plus size={14}/> Add</button>
+              </div>
+              <div className="grid gap-2">
+                {(draft.learning_items||[]).map((item, idx) => (
+                  <div key={item.db_key} className="glass-panel flex items-center gap-3 rounded-lg p-3">
+                    <input className="flex-1 bg-transparent font-semibold outline-none text-sm" value={item.label} onChange={(e)=>updateLearning(idx,'label',e.target.value)} placeholder="Label" />
+                    <div className="flex items-center gap-1">
+                      <input className="w-16 rounded border line-border bg-transparent px-2 py-1 text-center font-extrabold text-sm" type="number" value={item.points} onChange={(e)=>updateLearning(idx,'points',e.target.value)} />
+                      <span className="muted-text text-xs">pts</span>
+                    </div>
+                    <button onClick={()=>removeLearning(idx)} className="text-red-500 shrink-0"><Trash2 size={14}/></button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* ── Hanhagos ── */}
+            <div>
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <h3 className="font-extrabold">✋ Daily Hanhagos</h3>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="muted-text text-xs">Bonus per hanhaga:</span>
+                    <input className="w-14 rounded border line-border bg-transparent px-2 py-1 text-center font-extrabold text-sm" type="number" value={draft.hanhaga_bonus_per_item??5} onChange={(e)=>setNum('hanhaga_bonus_per_item',e.target.value)} />
+                    <span className="muted-text text-xs">pts · Max bonus: <strong>{hanhagaMax} pts</strong></span>
+                  </div>
+                </div>
+                <button onClick={addHanhaga} className="app-button focus-ring inline-flex items-center gap-1 rounded px-3 py-2 text-sm font-extrabold"><Plus size={14}/> Add</button>
+              </div>
+              <div className="grid gap-2">
+                {(draft.hanhaga_items||[]).map((item, idx) => (
+                  <div key={item.db_key} className="glass-panel flex items-center gap-3 rounded-lg p-3">
+                    <input className="flex-1 bg-transparent font-semibold outline-none text-sm" value={item.label} onChange={(e)=>updateHanhaga(idx,'label',e.target.value)} placeholder="Label" />
+                    <button onClick={()=>removeHanhaga(idx)} className="text-red-500 shrink-0"><Trash2 size={14}/></button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* ── Teacher Items ── */}
+            <div>
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <h3 className="font-extrabold">🎓 Teacher Items</h3>
+                  <p className="muted-text text-xs">Items teachers mark for their class · Total: <strong>{teacherTotal} pts</strong></p>
+                </div>
+                <button onClick={addTeacher} className="app-button focus-ring inline-flex items-center gap-1 rounded px-3 py-2 text-sm font-extrabold"><Plus size={14}/> Add</button>
+              </div>
+              {(draft.teacher_items||[]).length === 0 && (
+                <p className="muted-text text-sm font-semibold glass-panel rounded-lg px-4 py-3">No teacher items yet. Add items here that teachers can mark for students (e.g. "Tested on Maamar").</p>
+              )}
+              <div className="grid gap-2">
+                {(draft.teacher_items||[]).map((item, idx) => (
+                  <div key={item.db_key} className="glass-panel flex items-center gap-3 rounded-lg p-3">
+                    <input className="flex-1 bg-transparent font-semibold outline-none text-sm" value={item.label} onChange={(e)=>updateTeacher(idx,'label',e.target.value)} placeholder="Label" />
+                    <div className="flex items-center gap-1">
+                      <input className="w-16 rounded border line-border bg-transparent px-2 py-1 text-center font-extrabold text-sm" type="number" value={item.points||0} onChange={(e)=>updateTeacher(idx,'points',e.target.value)} />
+                      <span className="muted-text text-xs">pts</span>
+                    </div>
+                    <button onClick={()=>removeTeacher(idx)} className="text-red-500 shrink-0"><Trash2 size={14}/></button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* ── Thresholds ── */}
+            <div>
+              <h3 className="mb-3 font-extrabold">🏆 Thresholds</h3>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {[
+                  { key: 'standard_event_threshold', label: 'Standard Event (pts/week)' },
+                  { key: 'vip_event_threshold',      label: 'VIP Event (pts/week)' },
+                  { key: 'tier_platinum',             label: 'Platinum Card (lifetime pts)' },
+                  { key: 'tier_black',                label: 'Black Card (lifetime pts)' },
+                ].map(({ key, label }) => (
+                  <label key={key} className="grid gap-1">
+                    <span className="muted-text text-xs font-extrabold uppercase tracking-[0.08em]">{label}</span>
+                    <input className="focus-ring rounded border line-border bg-transparent px-3 py-2 font-bold text-sm" type="number" value={draft[key]??''} onChange={(e)=>setNum(key,e.target.value)} />
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* ── Summary + Save ── */}
+            <div className="glass-panel rounded-lg p-4">
+              <p className="text-sm font-semibold">
+                <span className="font-extrabold">Max daily score:</span> {learningTotal} (learning) + {hanhagaMax} (hanhagos) + {teacherTotal} (teacher) = <span className="shimmer-text font-extrabold">{learningTotal + hanhagaMax + teacherTotal} pts</span>
+              </p>
+            </div>
+            <button className="app-button focus-ring inline-flex items-center gap-2 rounded px-5 py-3 font-extrabold" onClick={() => onSave(draft)}>
+              <Save size={18} /> Save All Config
+            </button>
+          </div>
         );
       }
 
