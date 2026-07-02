@@ -1,6 +1,6 @@
 // AmEx Mivtza Service Worker
 // Bump CACHE_NAME to force all clients to pick up the new version.
-const CACHE_NAME = 'mivtza-v11';
+const CACHE_NAME = 'mivtza-v12';
 
 // The shell files to pre-cache on install. Supabase/esm.sh calls are always
 // network-first so live data is never stale; only the app shell is cached.
