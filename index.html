@@ -229,30 +229,14 @@
       const blankEntry = Object.fromEntries([...learningKeys, ...hanhagaKeys].map((key) => [key, false]));
       const today = () => new Date().toISOString().slice(0, 10);
 
-      function getStoredConfig() {
-        return {
-          url: localStorage.getItem('mivtza_supabase_url') || '',
-          anon: localStorage.getItem('mivtza_supabase_anon') || '',
-          adminCode: localStorage.getItem('mivtza_admin_code') || '',
-        };
-      }
+      // ── Supabase connection (hardcoded — anon key is safe to be public) ──────
+      const SUPABASE_URL  = 'https://mgiwefsbvixlnlokplpj.supabase.co';
+      const SUPABASE_ANON = 'sb_publishable_SobfslINB0WE0zvBvThyMA_qHPsi0ob';
+      const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
 
-      function useSupabase() {
-        const [config, setConfig] = useState(getStoredConfig);
-        const client = useMemo(() => {
-          if (!config.url || !config.anon) return null;
-          return createClient(config.url, config.anon);
-        }, [config.url, config.anon]);
-
-        const saveConfig = (next) => {
-          localStorage.setItem('mivtza_supabase_url', next.url.trim());
-          localStorage.setItem('mivtza_supabase_anon', next.anon.trim());
-          localStorage.setItem('mivtza_admin_code', next.adminCode.trim());
-          setConfig(getStoredConfig());
-        };
-
-        return { client, config, saveConfig };
-      }
+      // Admin passcode lives only in localStorage — no server involved.
+      function getAdminCode() { return localStorage.getItem('mivtza_admin_code') || ''; }
+      function saveAdminCode(code) { localStorage.setItem('mivtza_admin_code', code.trim()); }
 
       function classNames(...parts) {
         return parts.filter(Boolean).join(' ');
@@ -372,87 +356,29 @@
         );
       }
 
-      function SetupPanel({ config, saveConfig, embedded = false }) {
-        const [draft, setDraft] = useState(config);
-        const [testStatus, setTestStatus] = useState(''); // '' | 'testing' | 'ok' | 'fail'
-        const [testMsg, setTestMsg] = useState('');
-
-        const testConnection = async () => {
-          if (!draft.url.trim() || !draft.anon.trim()) {
-            setTestStatus('fail');
-            setTestMsg('Enter the Supabase URL and anon key first.');
-            return;
-          }
-          setTestStatus('testing');
-          setTestMsg('');
-          try {
-            const { createClient: cc } = await import('https://esm.sh/@supabase/supabase-js@2.45.4');
-            const testClient = cc(draft.url.trim(), draft.anon.trim());
-            const { data, error } = await testClient.from(CAMPER_READ_TABLE).select('id').limit(1);
-            if (error) {
-              setTestStatus('fail');
-              setTestMsg(`Connected but query failed: ${error.message}`);
-            } else {
-              setTestStatus('ok');
-              setTestMsg(`Connected ✓ — found ${data.length > 0 ? 'at least 1 camper' : '0 campers (table may be empty or RLS is blocking reads)'}.`);
-            }
-          } catch (err) {
-            setTestStatus('fail');
-            setTestMsg(
-              err instanceof TypeError && err.message.includes('fetch')
-                ? 'Could not reach Supabase. Check the URL is correct (must start with https://) and this device has internet.'
-                : `Error: ${err.message}`
-            );
-          }
-        };
-
-        const body = (
-          <>
-            {!embedded && (
-              <div className="mb-4 flex items-center gap-3">
-                <Settings className="accent-text" />
-                <div>
-                  <h2 className="text-lg font-extrabold">Backend Connection</h2>
-                  <p className="muted-text text-sm">Add the Supabase project URL and anon key for this device.</p>
-                </div>
-              </div>
-            )}
-            <div className="grid gap-3">
-              <TextInput icon={Gauge} placeholder="Supabase URL  (https://xxxx.supabase.co)" value={draft.url} onChange={(event) => { setDraft({ ...draft, url: event.target.value }); setTestStatus(''); }} />
-              <TextInput icon={KeyRound} placeholder="Supabase anon key" value={draft.anon} onChange={(event) => { setDraft({ ...draft, anon: event.target.value }); setTestStatus(''); }} />
-              <TextInput icon={Lock} placeholder="Optional admin passcode" value={draft.adminCode} onChange={(event) => setDraft({ ...draft, adminCode: event.target.value })} />
-              <div className="flex gap-2">
-                <button className="app-button focus-ring flex-1 inline-flex items-center justify-center gap-2 rounded px-5 py-3 font-extrabold" onClick={() => saveConfig(draft)}>
-                  <Save size={18} /> Save Connection
-                </button>
-                <button
-                  className="glass-panel focus-ring inline-flex items-center justify-center gap-2 rounded px-4 py-3 font-extrabold text-sm"
-                  onClick={testConnection}
-                  disabled={testStatus === 'testing'}
-                >
-                  {testStatus === 'testing' ? <RefreshCw size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
-                  {testStatus === 'testing' ? 'Testing…' : 'Test'}
-                </button>
-              </div>
-              {testMsg && (
-                <p className={`rounded border px-3 py-2 text-sm font-semibold ${testStatus === 'ok' ? 'border-green-400/40 bg-green-500/10 text-green-700' : 'border-red-400/40 bg-red-500/10 text-red-600'}`}>
-                  {testMsg}
-                </p>
-              )}
-            </div>
-          </>
-        );
-        if (embedded) return body;
+      function PasscodePanel() {
+        const [code, setCode] = useState(getAdminCode);
+        const [saved, setSaved] = useState(false);
         return (
-          <div className="mx-auto grid max-w-3xl gap-4">
-            <div className="glass-panel rounded-lg p-5 shadow-luxury">
-              {body}
-            </div>
+          <div className="grid gap-3">
+            <TextInput
+              icon={Lock}
+              type="password"
+              placeholder="Set admin passcode (leave blank for no lock)"
+              value={code}
+              onChange={(e) => { setCode(e.target.value); setSaved(false); }}
+            />
+            <button
+              className="app-button focus-ring inline-flex items-center justify-center gap-2 rounded px-5 py-3 font-extrabold"
+              onClick={() => { saveAdminCode(code); setSaved(true); }}
+            >
+              <Save size={18} /> {saved ? 'Saved ✓' : 'Save Passcode'}
+            </button>
           </div>
         );
       }
 
-      function LoginScreen({ client, config, saveConfig, onCamper }) {
+      function LoginScreen({ onCamper }) {
         const [scan, setScan] = useState('');
         const [busy, setBusy] = useState(false);
         const [error, setError] = useState('');
@@ -468,12 +394,11 @@
         }, []);
 
         const fetchCamper = async (nfcId) => {
-          if (!client) return;
           setBusy(true);
           setError('');
           setNfcMessage('');
           const target = normalizeNfcId(nfcId);
-          const { data, error: fetchError, status, statusText } = await client.from(CAMPER_READ_TABLE).select('*');
+          const { data, error: fetchError, status, statusText } = await supabase.from(CAMPER_READ_TABLE).select('*');
           setBusy(false);
           setScan('');
           // eslint-disable-next-line no-console
@@ -525,10 +450,6 @@
         const startPhysicalCardScan = async () => {
           setError('');
           setNfcMessage('');
-          if (!client) {
-            setError('Supabase connection is not configured on this device.');
-            return;
-          }
           if (!('NDEFReader' in window) || !window.isSecureContext) {
             const message = explainNfcError();
             setNfcMessage(message);
@@ -616,7 +537,6 @@
                     </p>
                   )}
                   {error && <p className="mt-3 rounded border border-red-400/40 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-600">{error}</p>}
-                  {!client && <SetupPanel config={config} saveConfig={saveConfig} />}
                 </div>
               </section>
             </div>
@@ -654,7 +574,7 @@
         );
       }
 
-      function CamperDashboard({ client, camper, onLogout }) {
+      function CamperDashboard({ camper, onLogout }) {
         const [entry, setEntry] = useState(blankEntry);
         const [config, setConfig] = useState(null);
         const [approved, setApproved] = useState(false);
@@ -662,14 +582,14 @@
         const status = normalizeStatus(camper.card_status);
 
         useEffect(() => {
-          client?.from('mivtza_config').select('*').limit(1).maybeSingle().then(({ data }) => setConfig(data || {}));
+          supabase.from('mivtza_config').select('*').limit(1).maybeSingle().then(({ data }) => setConfig(data || {}));
         }, [client]);
 
         const score = calculateScore(entry, config);
 
         const submit = async () => {
           setError('');
-          const { error: insertError } = await client.from('daily_entries').insert({
+          const { error: insertError } = await supabase.from('daily_entries').insert({
             camper_id: camper.id,
             entry_date: today(),
             ...entry,
@@ -745,9 +665,10 @@
         );
       }
 
-      function AdminGate({ config, children }) {
+      function AdminGate({ children }) {
+        const adminCode = getAdminCode();
         const [code, setCode] = useState('');
-        const [unlocked, setUnlocked] = useState(!config.adminCode || sessionStorage.getItem('mivtza_admin_unlocked') === '1');
+        const [unlocked, setUnlocked] = useState(!adminCode || sessionStorage.getItem('mivtza_admin_unlocked') === '1');
         if (unlocked) return children;
         return (
           <Shell admin status="Platinum">
@@ -759,7 +680,7 @@
                 <button
                   className="app-button focus-ring mt-4 w-full rounded px-5 py-3 font-extrabold"
                   onClick={() => {
-                    if (code === config.adminCode) {
+                    if (code === adminCode) {
                       sessionStorage.setItem('mivtza_admin_unlocked', '1');
                       setUnlocked(true);
                     }
@@ -773,7 +694,7 @@
         );
       }
 
-      function AdminDashboard({ client, config, saveConfig }) {
+      function AdminDashboard() {
         const [campers, setCampers] = useState([]);
         const [rules, setRules] = useState({});
         const [loading, setLoading] = useState(true);
@@ -795,15 +716,15 @@
         const load = async () => {
           setLoading(true);
           const [{ data: roster }, { data: configRow }] = await Promise.all([
-            client.from(CAMPER_READ_TABLE).select('*').order('name'),
-            client.from('mivtza_config').select('*').limit(1).maybeSingle(),
+            supabase.from(CAMPER_READ_TABLE).select('*').order('name'),
+            supabase.from('mivtza_config').select('*').limit(1).maybeSingle(),
           ]);
           setCampers(roster || []);
           setRules(configRow || {});
           setLoading(false);
         };
 
-        useEffect(() => { if (client) load(); }, [client]);
+        useEffect(() => { load(); }, []);
 
         const vip = campers.filter((c) => Number(c.weekly_points) >= Number(rules.vip_event_threshold ?? 700));
         const standard = campers.filter((c) => Number(c.weekly_points) >= Number(rules.standard_event_threshold ?? 400) && Number(c.weekly_points) < Number(rules.vip_event_threshold ?? 700));
@@ -839,10 +760,6 @@
 
         // ── Register ────────────────────────────────────────────────────────
         const registerCamper = async () => {
-          if (!client) {
-            notify('No Supabase connection on this device. Go to Backend Settings below and save the URL + anon key first.', 'error');
-            return;
-          }
           if (!newCamper.name.trim()) { notify('Please enter a camper name.', 'error'); return; }
           if (!newCamper.nfc_id.trim()) { notify('Please enter or scan a card ID.', 'error'); return; }
           const payload = {
@@ -850,7 +767,7 @@
             nfc_id: newCamper.nfc_id.trim(),
           };
           try {
-            const { error } = await client.from(CAMPER_WRITE_TABLE).insert(payload);
+            const { error } = await supabase.from(CAMPER_WRITE_TABLE).insert(payload);
             if (error) {
               notify(`Register failed: ${error.message}`, 'error');
             } else {
@@ -872,7 +789,7 @@
         // ── Delete ──────────────────────────────────────────────────────────
         const deleteCamper = async (camper) => {
           if (!window.confirm(`Delete "${camper.name}"? This cannot be undone.`)) return;
-          const { error } = await client.from(CAMPER_WRITE_TABLE).delete().eq('id', camper.id);
+          const { error } = await supabase.from(CAMPER_WRITE_TABLE).delete().eq('id', camper.id);
           if (error) {
             notify(`Delete failed: ${error.message}`, 'error');
           } else {
@@ -903,7 +820,7 @@
           if (!selected) return;
           const entryPayload = { camper_id: selected.id, entry_date: correction.entry_date };
           [...learningKeys, ...hanhagaKeys].forEach((key) => (entryPayload[key] = correction[key]));
-          const { error: entryError } = await client.from('daily_entries').upsert(entryPayload, { onConflict: 'camper_id,entry_date' });
+          const { error: entryError } = await supabase.from('daily_entries').upsert(entryPayload, { onConflict: 'camper_id,entry_date' });
           const { error: camperError } = await client
             .from(CAMPER_WRITE_TABLE)
             .update({ manual_points_adjustment: Number(correction.manual_points_adjustment || 0) })
@@ -915,19 +832,11 @@
         const saveRules = async () => {
           const payload = { ...rules };
           const id = payload.id;
-          const query = id ? client.from('mivtza_config').update(payload).eq('id', id) : client.from('mivtza_config').upsert(payload);
+          const query = id ? supabase.from('mivtza_config').update(payload).eq('id', id) : supabase.from('mivtza_config').upsert(payload);
           const { error } = await query;
           notify(error ? `Save failed: ${error.message}` : 'System rules saved ✓', error ? 'error' : 'info');
           load();
         };
-
-        if (!client) {
-          return (
-            <Shell admin status="Platinum">
-              <SetupPanel config={config} saveConfig={saveConfig} />
-            </Shell>
-          );
-        }
 
         const msgClass = msgType === 'error'
           ? 'border-red-400/40 bg-red-500/10 text-red-600'
@@ -1047,8 +956,8 @@
                 </div>
 
                 <div className="glass-panel rounded-lg p-5">
-                  <h2 className="mb-4 flex items-center gap-2 text-xl font-extrabold"><Settings className="accent-text" /> Backend Settings</h2>
-                  <SetupPanel config={config} saveConfig={saveConfig} embedded />
+                  <h2 className="mb-4 flex items-center gap-2 text-xl font-extrabold"><Settings className="accent-text" /> Admin Passcode</h2>
+                  <PasscodePanel />
                 </div>
               </section>
 
@@ -1111,20 +1020,19 @@
       }
 
       function App() {
-        const { client, config, saveConfig } = useSupabase();
         const [camper, setCamper] = useState(null);
         const isAdmin = window.location.pathname.endsWith('/admin') || window.location.search.includes('admin');
 
         if (isAdmin) {
           return (
-            <AdminGate config={config}>
-              <AdminDashboard client={client} config={config} saveConfig={saveConfig} />
+            <AdminGate>
+              <AdminDashboard />
             </AdminGate>
           );
         }
 
-        if (camper) return <CamperDashboard client={client} camper={camper} onLogout={() => setCamper(null)} />;
-        return <LoginScreen client={client} config={config} saveConfig={saveConfig} onCamper={setCamper} />;
+        if (camper) return <CamperDashboard camper={camper} onLogout={() => setCamper(null)} />;
+        return <LoginScreen onCamper={setCamper} />;
       }
 
       createRoot(document.getElementById('root')).render(<App />);
