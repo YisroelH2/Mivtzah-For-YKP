@@ -192,6 +192,42 @@
         -webkit-text-fill-color: transparent;
         animation: shimmer-text 5s ease-in-out infinite;
       }
+
+      /* ── Loading card glare sweep ─────────────────────────────────────── */
+      @keyframes card-sweep {
+        0%   { transform: translateX(-220%) skewX(-18deg); }
+        100% { transform: translateX(220%)  skewX(-18deg); }
+      }
+      @keyframes float-card {
+        0%, 100% { transform: translateY(0px) scale(1); }
+        50%       { transform: translateY(-8px) scale(1.012); }
+      }
+      @keyframes dot-pulse {
+        0%, 80%, 100% { opacity: .25; transform: scale(.8); }
+        40%            { opacity: 1;   transform: scale(1); }
+      }
+      .loading-card {
+        animation: float-card 2.4s ease-in-out infinite;
+        overflow: hidden;
+      }
+      .loading-card::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+          105deg,
+          transparent 30%,
+          rgba(255,255,255,.22) 48%,
+          rgba(255,255,255,.32) 50%,
+          rgba(255,255,255,.22) 52%,
+          transparent 70%
+        );
+        animation: card-sweep 1.9s cubic-bezier(.4,0,.2,1) infinite;
+        pointer-events: none;
+      }
+      .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: dot-pulse 1.4s ease-in-out infinite; }
+      .dot:nth-child(2) { animation-delay: .2s; }
+      .dot:nth-child(3) { animation-delay: .4s; }
     </style>
   </head>
   <body>
@@ -416,20 +452,19 @@
         const [scan, setScan] = useState('');
         const [busy, setBusy] = useState(false);
         const [error, setError] = useState('');
+        const [cardNotFound, setCardNotFound] = useState(false);
         const [nfcListening, setNfcListening] = useState(false);
         const [nfcMessage, setNfcMessage] = useState('');
         const [showManual, setShowManual] = useState(false);
         const inputRef = useRef(null);
         const ndefRef = useRef(null);
 
-        // Keep the hidden input focused at all times for USB card reader / keyboard wedge scanners.
-        // When showManual is true the input becomes visible so campers can type manually.
+        // Keep hidden input focused for USB/keyboard-wedge scanners.
+        // inputMode="none" prevents the mobile soft keyboard from appearing
+        // even when the input is focused — the only time we want the keyboard
+        // is when the user explicitly taps "Enter Manually".
         useEffect(() => {
-          if (nfcListening) {
-            // Blur the hidden input so the mobile keyboard dismisses while NFC is active
-            inputRef.current?.blur();
-            return;
-          }
+          if (nfcListening) { inputRef.current?.blur(); return; }
           if (!showManual) inputRef.current?.focus();
           const id = window.setInterval(() => {
             if (!busy && !nfcListening && !showManual) inputRef.current?.focus();
@@ -440,11 +475,12 @@
         const fetchCamper = async (nfcId) => {
           setBusy(true);
           setError('');
-          setNfcMessage('Looking up card…');
+          setCardNotFound(false);
+          setNfcMessage('');
           try {
             const target = normalizeNfcId(nfcId);
 
-            // Admin card check — happens locally, no network needed.
+            // Admin card — local check, no network.
             const adminCards = getAdminCards();
             if (adminCards.some((id) => normalizeNfcId(id) === target)) {
               sessionStorage.setItem('mivtza_admin_unlocked', '1');
@@ -455,11 +491,10 @@
             const { data, error: fetchError } = await supabase.from(CAMPER_READ_TABLE).select('*');
             setBusy(false);
             setScan('');
-            setNfcMessage('');
-            if (fetchError) { setError(`Supabase error: ${fetchError.message}`); return; }
-            if (!data || data.length === 0) { setError(`No campers found — RLS may be blocking reads on "${CAMPER_READ_TABLE}".`); return; }
+            if (fetchError) { setError(`Connection error: ${fetchError.message}`); return; }
+            if (!data || data.length === 0) { setError(`No campers found — check Supabase connection.`); return; }
             const match = data.find((row) => normalizeNfcId(row.nfc_id) === target);
-            if (!match) { setError('Card not recognized. Register it in the admin portal first.'); return; }
+            if (!match) { setCardNotFound(true); return; }
             onCamper(match);
           } catch (err) {
             setBusy(false); setScan(''); setNfcMessage('');
@@ -505,6 +540,51 @@
 
         return (
           <Shell status="Gold">
+
+            {/* ── Premium loading overlay ── */}
+            {busy && (
+              <div className="fixed inset-0 z-50 grid place-items-center bg-black/75 backdrop-blur-md">
+                <div className="flex flex-col items-center gap-8">
+                  <div className="loading-card lux-card relative w-72 rounded-2xl p-10 shadow-luxury">
+                    <div className="flex flex-col items-center gap-5">
+                      <CreditCard size={52} className="shimmer-text" strokeWidth={1.5} />
+                      <p className="shimmer-text text-xl font-extrabold uppercase tracking-[0.2em]">Verifying</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 text-white/60">
+                    <span className="text-sm font-semibold">Finding cardmember profile</span>
+                    <span className="flex gap-1.5 ml-1">
+                      <span className="dot" />
+                      <span className="dot" />
+                      <span className="dot" />
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── Card not registered modal ── */}
+            {cardNotFound && (
+              <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 backdrop-blur-md p-6">
+                <div className="lux-card w-full max-w-sm rounded-2xl p-8 text-center shadow-luxury">
+                  <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-red-500/15 border border-red-400/30">
+                    <CreditCard size={32} className="text-red-400" strokeWidth={1.5} />
+                  </div>
+                  <h2 className="text-2xl font-extrabold">Card Not Registered</h2>
+                  <p className="muted-text mt-2 text-sm font-semibold leading-relaxed">
+                    This card doesn't have a cardmember profile yet.<br />
+                    See your counselor to get registered.
+                  </p>
+                  <button
+                    className="app-button focus-ring mt-6 w-full rounded-xl px-5 py-4 font-extrabold"
+                    onClick={() => setCardNotFound(false)}
+                  >
+                    Got It
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="mx-auto grid min-h-[calc(100vh-7rem)] max-w-lg place-items-center">
               <section className="grid w-full gap-6 text-center">
                 {/* Branding */}
@@ -535,12 +615,13 @@
                   {nfcListening ? 'Hold your card to the back of this device' : 'Tap "Enable NFC" then hold your card to the back of the device'}
                 </p>
 
-                {/* Hidden input — always in DOM for USB keyboard-wedge scanner focus */}
+                {/* Hidden input — focused for USB scanner; inputMode=none suppresses soft keyboard */}
                 <input
                   ref={inputRef}
                   value={scan}
                   onChange={(e) => setScan(e.target.value)}
                   onKeyDown={onKeyDown}
+                  inputMode={showManual ? 'text' : 'none'}
                   className={showManual
                     ? 'glass-panel focus-ring w-full rounded-lg px-5 py-4 text-center text-lg font-bold outline-none shadow-glow'
                     : 'fixed top-0 left-0 h-px w-px opacity-0 pointer-events-none'}
@@ -549,13 +630,16 @@
                 />
                 {showManual && scan && (
                   <button className="app-button focus-ring -mt-3 rounded px-5 py-3 font-extrabold" onClick={() => fetchCamper(scan)}>
-                    {busy ? <RefreshCw className="mx-auto animate-spin" size={20} /> : 'Submit'}
+                    Submit
                   </button>
                 )}
 
-                {/* Messages */}
-                {nfcMessage && <p className="accent-bg rounded border line-border px-4 py-3 text-sm font-semibold">{nfcMessage}</p>}
-                {error && <p className="rounded border border-red-400/40 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-600">{error}</p>}
+                {/* Technical error (not the not-found modal) */}
+                {error && (
+                  <p className="rounded-xl border border-red-400/40 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-500">
+                    {error}
+                  </p>
+                )}
 
                 {/* Utility row */}
                 <div className="flex items-center justify-end gap-2">
