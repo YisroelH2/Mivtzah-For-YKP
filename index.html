@@ -238,6 +238,10 @@
       function getAdminCode() { return localStorage.getItem('mivtza_admin_code') || ''; }
       function saveAdminCode(code) { localStorage.setItem('mivtza_admin_code', code.trim()); }
 
+      // Admin NFC cards — scanning one on the login screen goes straight to the admin portal.
+      function getAdminCards() { try { return JSON.parse(localStorage.getItem('mivtza_admin_cards') || '[]'); } catch { return []; } }
+      function saveAdminCards(cards) { localStorage.setItem('mivtza_admin_cards', JSON.stringify(cards)); }
+
       function classNames(...parts) {
         return parts.filter(Boolean).join(' ');
       }
@@ -384,7 +388,6 @@
         const [nfcListening, setNfcListening] = useState(false);
         const [nfcMessage, setNfcMessage] = useState('');
         const [showManual, setShowManual] = useState(false);
-        const [showSettings, setShowSettings] = useState(false);
         const inputRef = useRef(null);
         const ndefRef = useRef(null);
 
@@ -402,6 +405,15 @@
           setNfcMessage('Looking up card…');
           try {
             const target = normalizeNfcId(nfcId);
+
+            // Admin card check — happens locally, no network needed.
+            const adminCards = getAdminCards();
+            if (adminCards.some((id) => normalizeNfcId(id) === target)) {
+              sessionStorage.setItem('mivtza_admin_unlocked', '1');
+              window.location.href = window.location.pathname + '?admin=1';
+              return;
+            }
+
             const { data, error: fetchError } = await supabase.from(CAMPER_READ_TABLE).select('*');
             setBusy(false);
             setScan('');
@@ -455,21 +467,6 @@
 
         return (
           <Shell status="Gold">
-            {/* ── Admin passcode settings modal ── */}
-            {showSettings && (
-              <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-6">
-                <div className="glass-panel w-full max-w-sm rounded-lg p-6 shadow-luxury">
-                  <div className="mb-4 flex items-center justify-between">
-                    <h2 className="text-xl font-extrabold">Admin Passcode</h2>
-                    <button className="focus-ring rounded p-1" onClick={() => setShowSettings(false)}><X size={20} /></button>
-                  </div>
-                  <p className="muted-text mb-4 text-sm font-semibold">Set a passcode to lock the admin portal. Leave blank for no lock.</p>
-                  <PasscodePanel />
-                  <button className="app-button focus-ring mt-4 w-full rounded px-4 py-3 font-extrabold" onClick={() => setShowSettings(false)}>Done</button>
-                </div>
-              </div>
-            )}
-
             <div className="mx-auto grid min-h-[calc(100vh-7rem)] max-w-lg place-items-center">
               <section className="grid w-full gap-6 text-center">
                 {/* Branding */}
@@ -516,42 +513,27 @@
                 {error && <p className="rounded border border-red-400/40 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-600">{error}</p>}
 
                 {/* Utility row */}
-                <div className="flex items-center justify-between gap-3">
-                  {/* Settings */}
+                <div className="flex items-center justify-end gap-2">
                   <button
-                    onClick={() => setShowSettings(true)}
+                    onClick={() => { setShowManual((v) => !v); setTimeout(() => inputRef.current?.focus(), 50); }}
                     className="glass-panel focus-ring inline-flex items-center gap-2 rounded px-3 py-2 text-sm font-bold"
-                    title="Admin settings"
                   >
-                    <Settings size={15} /> Settings
+                    <PencilLine size={15} /> {showManual ? 'Hide' : 'Enter Manually'}
                   </button>
-
-                  <div className="flex items-center gap-2">
-                    {/* Enter Manually toggle */}
+                  {!nfcListening && (
                     <button
-                      onClick={() => { setShowManual((v) => !v); setTimeout(() => inputRef.current?.focus(), 50); }}
-                      className="glass-panel focus-ring inline-flex items-center gap-2 rounded px-3 py-2 text-sm font-bold"
+                      onClick={startPhysicalCardScan}
+                      disabled={busy}
+                      className="lux-card focus-ring inline-flex items-center gap-2 rounded px-3 py-2 text-sm font-extrabold shadow-luxury disabled:opacity-70"
                     >
-                      <PencilLine size={15} /> {showManual ? 'Hide' : 'Enter Manually'}
+                      <Smartphone size={15} /> Enable NFC
                     </button>
-
-                    {/* NFC enable — compact, only shows when not yet listening */}
-                    {!nfcListening && (
-                      <button
-                        onClick={startPhysicalCardScan}
-                        disabled={busy}
-                        className="lux-card focus-ring inline-flex items-center gap-2 rounded px-3 py-2 text-sm font-extrabold shadow-luxury disabled:opacity-70"
-                        title="Start NFC reader"
-                      >
-                        <Smartphone size={15} /> Enable NFC
-                      </button>
-                    )}
-                    {nfcListening && (
-                      <span className="inline-flex items-center gap-2 rounded px-3 py-2 text-sm font-bold accent-text">
-                        <RefreshCw size={14} className="animate-spin" /> NFC Active
-                      </span>
-                    )}
-                  </div>
+                  )}
+                  {nfcListening && (
+                    <span className="inline-flex items-center gap-2 rounded px-3 py-2 text-sm font-bold accent-text">
+                      <RefreshCw size={14} className="animate-spin" /> NFC Active
+                    </span>
+                  )}
                 </div>
               </section>
             </div>
@@ -725,6 +707,77 @@
               </div>
             </div>
           </Shell>
+        );
+      }
+
+      function AdminCardsPanel() {
+        const [cards, setCards] = useState(getAdminCards);
+        const [newId, setNewId] = useState('');
+        const [listening, setListening] = useState(false);
+        const ndefRef = useRef(null);
+
+        const persist = (next) => { setCards(next); saveAdminCards(next); };
+
+        const addCard = (rawId) => {
+          const id = rawId.trim();
+          if (!id) return;
+          if (cards.includes(id)) { setNewId(''); return; }
+          persist([...cards, id]);
+          setNewId('');
+        };
+
+        const removeCard = (id) => persist(cards.filter((c) => c !== id));
+
+        const startScan = async () => {
+          if (!('NDEFReader' in window) || !window.isSecureContext) return;
+          try {
+            const ndef = new NDEFReader();
+            ndefRef.current = ndef;
+            ndef.onreading = (e) => {
+              const serial = e.serialNumber;
+              setListening(false);
+              if (serial) addCard(serial);
+            };
+            await ndef.scan();
+            setListening(true);
+          } catch { setListening(false); }
+        };
+
+        return (
+          <div className="glass-panel rounded-lg p-5">
+            <h2 className="mb-1 flex items-center gap-2 text-xl font-extrabold"><KeyRound className="accent-text" /> Admin Cards</h2>
+            <p className="muted-text mb-4 text-xs font-semibold">Cards scanned here go straight to the admin portal.</p>
+            <div className="flex gap-2 mb-3">
+              <label className="glass-panel flex flex-1 items-center gap-2 rounded px-3 py-2">
+                <ScanLine size={16} className="muted-text shrink-0" />
+                <input
+                  className="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none placeholder:font-medium font-mono"
+                  placeholder="Card ID"
+                  value={newId}
+                  onChange={(e) => setNewId(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && addCard(newId)}
+                />
+              </label>
+              <button onClick={() => addCard(newId)} className="app-button focus-ring rounded px-3 py-2 font-extrabold text-sm"><Plus size={16} /></button>
+              <button
+                onClick={startScan}
+                disabled={listening}
+                className="lux-card focus-ring inline-flex items-center gap-1 rounded px-3 py-2 text-sm font-extrabold disabled:opacity-70"
+              >
+                {listening ? <RefreshCw size={14} className="animate-spin" /> : <Smartphone size={14} />}
+                {listening ? 'Tap…' : 'Scan'}
+              </button>
+            </div>
+            <div className="grid gap-2">
+              {cards.length === 0 && <p className="muted-text text-sm font-semibold">No admin cards registered yet.</p>}
+              {cards.map((id) => (
+                <div key={id} className="flex items-center justify-between rounded border line-border px-3 py-2">
+                  <span className="font-mono text-xs font-semibold">{id}</span>
+                  <button onClick={() => removeCard(id)} className="text-red-500 hover:scale-105"><Trash2 size={15} /></button>
+                </div>
+              ))}
+            </div>
+          </div>
         );
       }
 
@@ -973,7 +1026,7 @@
                 <AccessList title="Not Eligible" icon={X} campers={notEligible} />
               </section>
 
-              <section className="grid gap-5 lg:grid-cols-2">
+              <section className="grid gap-5 lg:grid-cols-3">
                 {/* ── Register Camper ── */}
                 <div className="glass-panel rounded-lg p-5">
                   <h2 className="mb-4 flex items-center gap-2 text-xl font-extrabold"><Plus className="accent-text" /> Register Camper</h2>
@@ -1002,6 +1055,9 @@
                     <button className="app-button focus-ring rounded px-5 py-3 font-extrabold" onClick={registerCamper}>Register Camper</button>
                   </div>
                 </div>
+
+                {/* ── Admin Cards ── */}
+                <AdminCardsPanel />
 
                 <div className="glass-panel rounded-lg p-5">
                   <h2 className="mb-4 flex items-center gap-2 text-xl font-extrabold"><Settings className="accent-text" /> Admin Passcode</h2>
