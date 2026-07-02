@@ -374,6 +374,38 @@
 
       function SetupPanel({ config, saveConfig, embedded = false }) {
         const [draft, setDraft] = useState(config);
+        const [testStatus, setTestStatus] = useState(''); // '' | 'testing' | 'ok' | 'fail'
+        const [testMsg, setTestMsg] = useState('');
+
+        const testConnection = async () => {
+          if (!draft.url.trim() || !draft.anon.trim()) {
+            setTestStatus('fail');
+            setTestMsg('Enter the Supabase URL and anon key first.');
+            return;
+          }
+          setTestStatus('testing');
+          setTestMsg('');
+          try {
+            const { createClient: cc } = await import('https://esm.sh/@supabase/supabase-js@2.45.4');
+            const testClient = cc(draft.url.trim(), draft.anon.trim());
+            const { data, error } = await testClient.from(CAMPER_READ_TABLE).select('id').limit(1);
+            if (error) {
+              setTestStatus('fail');
+              setTestMsg(`Connected but query failed: ${error.message}`);
+            } else {
+              setTestStatus('ok');
+              setTestMsg(`Connected ✓ — found ${data.length > 0 ? 'at least 1 camper' : '0 campers (table may be empty or RLS is blocking reads)'}.`);
+            }
+          } catch (err) {
+            setTestStatus('fail');
+            setTestMsg(
+              err instanceof TypeError && err.message.includes('fetch')
+                ? 'Could not reach Supabase. Check the URL is correct (must start with https://) and this device has internet.'
+                : `Error: ${err.message}`
+            );
+          }
+        };
+
         const body = (
           <>
             {!embedded && (
@@ -386,12 +418,27 @@
               </div>
             )}
             <div className="grid gap-3">
-              <TextInput icon={Gauge} placeholder="Supabase URL" value={draft.url} onChange={(event) => setDraft({ ...draft, url: event.target.value })} />
-              <TextInput icon={KeyRound} placeholder="Supabase anon key" value={draft.anon} onChange={(event) => setDraft({ ...draft, anon: event.target.value })} />
+              <TextInput icon={Gauge} placeholder="Supabase URL  (https://xxxx.supabase.co)" value={draft.url} onChange={(event) => { setDraft({ ...draft, url: event.target.value }); setTestStatus(''); }} />
+              <TextInput icon={KeyRound} placeholder="Supabase anon key" value={draft.anon} onChange={(event) => { setDraft({ ...draft, anon: event.target.value }); setTestStatus(''); }} />
               <TextInput icon={Lock} placeholder="Optional admin passcode" value={draft.adminCode} onChange={(event) => setDraft({ ...draft, adminCode: event.target.value })} />
-              <button className="app-button focus-ring mt-2 inline-flex items-center justify-center gap-2 rounded px-5 py-3 font-extrabold" onClick={() => saveConfig(draft)}>
-                <Save size={18} /> Save Connection
-              </button>
+              <div className="flex gap-2">
+                <button className="app-button focus-ring flex-1 inline-flex items-center justify-center gap-2 rounded px-5 py-3 font-extrabold" onClick={() => saveConfig(draft)}>
+                  <Save size={18} /> Save Connection
+                </button>
+                <button
+                  className="glass-panel focus-ring inline-flex items-center justify-center gap-2 rounded px-4 py-3 font-extrabold text-sm"
+                  onClick={testConnection}
+                  disabled={testStatus === 'testing'}
+                >
+                  {testStatus === 'testing' ? <RefreshCw size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
+                  {testStatus === 'testing' ? 'Testing…' : 'Test'}
+                </button>
+              </div>
+              {testMsg && (
+                <p className={`rounded border px-3 py-2 text-sm font-semibold ${testStatus === 'ok' ? 'border-green-400/40 bg-green-500/10 text-green-700' : 'border-red-400/40 bg-red-500/10 text-red-600'}`}>
+                  {testMsg}
+                </p>
+              )}
             </div>
           </>
         );
@@ -792,19 +839,33 @@
 
         // ── Register ────────────────────────────────────────────────────────
         const registerCamper = async () => {
+          if (!client) {
+            notify('No Supabase connection on this device. Go to Backend Settings below and save the URL + anon key first.', 'error');
+            return;
+          }
           if (!newCamper.name.trim()) { notify('Please enter a camper name.', 'error'); return; }
           if (!newCamper.nfc_id.trim()) { notify('Please enter or scan a card ID.', 'error'); return; }
           const payload = {
             name: newCamper.name.trim(),
             nfc_id: newCamper.nfc_id.trim(),
           };
-          const { error } = await client.from(CAMPER_WRITE_TABLE).insert(payload);
-          if (error) {
-            notify(`Register failed: ${error.message}`, 'error');
-          } else {
-            setNewCamper({ name: '', nfc_id: '' });
-            notify('Camper registered ✓');
-            load();
+          try {
+            const { error } = await client.from(CAMPER_WRITE_TABLE).insert(payload);
+            if (error) {
+              notify(`Register failed: ${error.message}`, 'error');
+            } else {
+              setNewCamper({ name: '', nfc_id: '' });
+              notify('Camper registered ✓');
+              load();
+            }
+          } catch (networkErr) {
+            const isNetworkFail = networkErr instanceof TypeError && networkErr.message.includes('fetch');
+            notify(
+              isNetworkFail
+                ? 'Network error — could not reach Supabase. Check: (1) internet connection, (2) the Supabase URL in Backend Settings is correct and starts with https://, (3) the anon key is correct.'
+                : `Unexpected error: ${networkErr.message}`,
+              'error'
+            );
           }
         };
 
