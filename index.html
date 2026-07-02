@@ -383,9 +383,13 @@
         const [error, setError] = useState('');
         const [nfcListening, setNfcListening] = useState(false);
         const [nfcMessage, setNfcMessage] = useState('');
+        const [showManual, setShowManual] = useState(false);
+        const [showSettings, setShowSettings] = useState(false);
         const inputRef = useRef(null);
         const ndefRef = useRef(null);
 
+        // Keep the hidden input focused at all times for USB card reader / keyboard wedge scanners.
+        // When showManual is true the input becomes visible so campers can type manually.
         useEffect(() => {
           inputRef.current?.focus();
           const id = window.setInterval(() => { if (!busy) inputRef.current?.focus(); }, 1200);
@@ -402,85 +406,46 @@
             setBusy(false);
             setScan('');
             setNfcMessage('');
-            if (fetchError) {
-              setError(`Supabase error: ${fetchError.message}`);
-              return;
-            }
-            if (!data || data.length === 0) {
-              setError(`No campers found — RLS may be blocking anonymous reads on "${CAMPER_READ_TABLE}".`);
-              return;
-            }
+            if (fetchError) { setError(`Supabase error: ${fetchError.message}`); return; }
+            if (!data || data.length === 0) { setError(`No campers found — RLS may be blocking reads on "${CAMPER_READ_TABLE}".`); return; }
             const match = data.find((row) => normalizeNfcId(row.nfc_id) === target);
-            if (!match) {
-              setError('Card not recognized. Register it in the admin portal first.');
-              return;
-            }
+            if (!match) { setError('Card not recognized. Register it in the admin portal first.'); return; }
             onCamper(match);
           } catch (err) {
-            setBusy(false);
-            setScan('');
-            setNfcMessage('');
+            setBusy(false); setScan(''); setNfcMessage('');
             setError(`Error: ${err.message}`);
           }
         };
 
         const explainNfcError = (scanError) => {
-          if (!('NDEFReader' in window)) {
-            return 'This device or browser does not expose Web NFC. Use Android Chrome on a device with NFC, or scan with the USB reader.';
-          }
-          if (!window.isSecureContext) {
-            return 'Web NFC requires a secure page. Host this file over HTTPS, such as GitHub Pages, or use the keyboard scanner locally.';
-          }
-          if (scanError?.name === 'NotAllowedError') {
-            return 'NFC permission was denied. Allow NFC access in Chrome and try again.';
-          }
-          if (scanError?.name === 'NotReadableError') {
-            return 'NFC is unavailable right now. Make sure NFC is turned on in Android system settings, then try again.';
-          }
-          if (scanError?.name === 'NotSupportedError') {
-            return 'This Android device does not appear to support Web NFC scanning.';
-          }
-          return scanError?.message || 'NFC scanning could not start. Check that NFC is enabled and try again.';
+          if (!('NDEFReader' in window)) return 'Web NFC is not available on this browser. Use Android Chrome.';
+          if (!window.isSecureContext) return 'Web NFC requires HTTPS. Open via GitHub Pages.';
+          if (scanError?.name === 'NotAllowedError') return 'NFC permission denied. Allow NFC in Chrome settings.';
+          if (scanError?.name === 'NotReadableError') return 'NFC unavailable — make sure NFC is on in Android settings.';
+          return scanError?.message || 'NFC could not start. Check that NFC is enabled.';
         };
 
         const startPhysicalCardScan = async () => {
-          setError('');
-          setNfcMessage('');
+          setError(''); setNfcMessage('');
           if (!('NDEFReader' in window) || !window.isSecureContext) {
-            const message = explainNfcError();
-            setNfcMessage(message);
-            window.alert(message);
-            return;
+            setNfcMessage(explainNfcError()); return;
           }
-
           try {
             const ndef = new NDEFReader();
             ndefRef.current = ndef;
             ndef.onreading = (event) => {
               const serialNumber = event.serialNumber;
-              if (!serialNumber) {
-                const message = 'The NFC tag was read, but Chrome did not provide a hardware serial number.';
-                setNfcMessage(message);
-                window.alert(message);
-                return;
-              }
+              if (!serialNumber) { setNfcMessage('Card read but no serial returned.'); return; }
               setNfcListening(false);
-              setNfcMessage(`Card detected: ${serialNumber}`);
               fetchCamper(serialNumber);
             };
-            ndef.onreadingerror = () => {
-              const message = 'NFC tag read failed. Hold the physical card flat against the back of the device and try again.';
-              setNfcMessage(message);
-              window.alert(message);
-            };
+            ndef.onreadingerror = () => setNfcMessage('Read failed — hold card flat against the back.');
             await ndef.scan();
             setNfcListening(true);
-            setNfcMessage('Listening for a physical card. Tap the card to the back of this Android device.');
+            setNfcMessage('Ready — hold card to the back of this device.');
           } catch (scanError) {
             setNfcListening(false);
-            const message = explainNfcError(scanError);
-            setNfcMessage(message);
-            window.alert(message);
+            setNfcMessage(explainNfcError(scanError));
           }
         };
 
@@ -490,49 +455,103 @@
 
         return (
           <Shell status="Gold">
-            <div className="mx-auto grid min-h-[calc(100vh-7rem)] max-w-5xl place-items-center">
+            {/* ── Admin passcode settings modal ── */}
+            {showSettings && (
+              <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-6">
+                <div className="glass-panel w-full max-w-sm rounded-lg p-6 shadow-luxury">
+                  <div className="mb-4 flex items-center justify-between">
+                    <h2 className="text-xl font-extrabold">Admin Passcode</h2>
+                    <button className="focus-ring rounded p-1" onClick={() => setShowSettings(false)}><X size={20} /></button>
+                  </div>
+                  <p className="muted-text mb-4 text-sm font-semibold">Set a passcode to lock the admin portal. Leave blank for no lock.</p>
+                  <PasscodePanel />
+                  <button className="app-button focus-ring mt-4 w-full rounded px-4 py-3 font-extrabold" onClick={() => setShowSettings(false)}>Done</button>
+                </div>
+              </div>
+            )}
+
+            <div className="mx-auto grid min-h-[calc(100vh-7rem)] max-w-lg place-items-center">
               <section className="grid w-full gap-6 text-center">
+                {/* Branding */}
                 <div>
                   <p className="accent-text text-sm font-extrabold uppercase tracking-[0.28em]">American Express Mivtza</p>
-                  <h1 className="mt-2 text-4xl font-extrabold sm:text-6xl">Learn. Do. Earn. Grow.</h1>
+                  <h1 className="mt-2 text-4xl font-extrabold sm:text-5xl">Learn. Do. Earn. Grow.</h1>
                 </div>
-                <div className="glass-panel mx-auto grid h-56 w-full max-w-xl place-items-center rounded-lg border-dashed shadow-luxury">
-                  <div className="lux-card flex h-32 w-52 flex-col items-center justify-center gap-3 rounded-lg">
-                    <Sparkles size={34} />
-                    <span className="text-xs font-extrabold uppercase tracking-[0.2em]">Graphic Logo</span>
+
+                {/* Logo placeholder */}
+                <div className="glass-panel mx-auto grid h-56 w-full place-items-center rounded-lg border-dashed shadow-luxury">
+                  <div className={classNames('lux-card flex h-32 w-52 flex-col items-center justify-center gap-3 rounded-lg transition-all', nfcListening && 'nfc-listening')}>
+                    <Sparkles size={34} className="relative z-10" />
+                    <span className="relative z-10 text-xs font-extrabold uppercase tracking-[0.2em]">
+                      {nfcListening ? 'Ready to Scan' : 'Graphic Logo'}
+                    </span>
                   </div>
                 </div>
-                <div className="mx-auto w-full max-w-xl">
-                  <label className="glass-panel flex items-center gap-3 rounded-lg px-5 py-4 shadow-glow">
-                    <ScanLine className="accent-text" />
-                    <input
-                      ref={inputRef}
-                      value={scan}
-                      onChange={(event) => setScan(event.target.value)}
-                      onKeyDown={onKeyDown}
-                      placeholder="Scan NFC card"
-                      className="focus-ring flex-1 bg-transparent text-center text-lg font-bold outline-none placeholder:muted-text"
-                    />
-                    {busy ? <RefreshCw className="animate-spin" /> : <ChevronRight />}
-                  </label>
-                  <button
-                    type="button"
-                    onClick={startPhysicalCardScan}
-                    disabled={busy || nfcListening}
-                    className={classNames(
-                      'lux-card focus-ring mt-4 flex w-full items-center justify-center gap-3 rounded-lg px-5 py-5 text-lg font-extrabold shadow-luxury transition hover:scale-[1.01] disabled:cursor-wait disabled:opacity-90',
-                      nfcListening && 'nfc-listening'
-                    )}
-                  >
-                    {nfcListening ? <RefreshCw className="relative z-10 animate-spin" size={24} /> : <Smartphone className="relative z-10" size={24} />}
-                    <span className="relative z-10">{nfcListening ? 'Listening for Card' : 'Tap Physical Card'}</span>
+
+                {/* Status / instruction */}
+                <p className="muted-text text-base font-semibold">
+                  {nfcListening ? 'Hold your card to the back of this device' : 'Tap "Enable NFC" then hold your card to the back of the device'}
+                </p>
+
+                {/* Hidden input — always in DOM for USB keyboard-wedge scanner focus */}
+                <input
+                  ref={inputRef}
+                  value={scan}
+                  onChange={(e) => setScan(e.target.value)}
+                  onKeyDown={onKeyDown}
+                  className={showManual
+                    ? 'glass-panel focus-ring w-full rounded-lg px-5 py-4 text-center text-lg font-bold outline-none shadow-glow'
+                    : 'fixed top-0 left-0 h-px w-px opacity-0 pointer-events-none'}
+                  placeholder="Type card ID, press Enter"
+                  tabIndex={showManual ? 0 : -1}
+                />
+                {showManual && scan && (
+                  <button className="app-button focus-ring -mt-3 rounded px-5 py-3 font-extrabold" onClick={() => fetchCamper(scan)}>
+                    {busy ? <RefreshCw className="mx-auto animate-spin" size={20} /> : 'Submit'}
                   </button>
-                  {nfcMessage && (
-                    <p className="accent-bg mt-3 rounded border line-border px-4 py-3 text-sm font-semibold">
-                      {nfcMessage}
-                    </p>
-                  )}
-                  {error && <p className="mt-3 rounded border border-red-400/40 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-600">{error}</p>}
+                )}
+
+                {/* Messages */}
+                {nfcMessage && <p className="accent-bg rounded border line-border px-4 py-3 text-sm font-semibold">{nfcMessage}</p>}
+                {error && <p className="rounded border border-red-400/40 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-600">{error}</p>}
+
+                {/* Utility row */}
+                <div className="flex items-center justify-between gap-3">
+                  {/* Settings */}
+                  <button
+                    onClick={() => setShowSettings(true)}
+                    className="glass-panel focus-ring inline-flex items-center gap-2 rounded px-3 py-2 text-sm font-bold"
+                    title="Admin settings"
+                  >
+                    <Settings size={15} /> Settings
+                  </button>
+
+                  <div className="flex items-center gap-2">
+                    {/* Enter Manually toggle */}
+                    <button
+                      onClick={() => { setShowManual((v) => !v); setTimeout(() => inputRef.current?.focus(), 50); }}
+                      className="glass-panel focus-ring inline-flex items-center gap-2 rounded px-3 py-2 text-sm font-bold"
+                    >
+                      <PencilLine size={15} /> {showManual ? 'Hide' : 'Enter Manually'}
+                    </button>
+
+                    {/* NFC enable — compact, only shows when not yet listening */}
+                    {!nfcListening && (
+                      <button
+                        onClick={startPhysicalCardScan}
+                        disabled={busy}
+                        className="lux-card focus-ring inline-flex items-center gap-2 rounded px-3 py-2 text-sm font-extrabold shadow-luxury disabled:opacity-70"
+                        title="Start NFC reader"
+                      >
+                        <Smartphone size={15} /> Enable NFC
+                      </button>
+                    )}
+                    {nfcListening && (
+                      <span className="inline-flex items-center gap-2 rounded px-3 py-2 text-sm font-bold accent-text">
+                        <RefreshCw size={14} className="animate-spin" /> NFC Active
+                      </span>
+                    )}
+                  </div>
                 </div>
               </section>
             </div>
