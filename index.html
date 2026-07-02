@@ -347,7 +347,6 @@
               </div>
               <div className="flex items-center gap-2">
                 {admin && <a className="glass-panel rounded px-4 py-2 text-sm font-bold" href="./index.html">Check-In</a>}
-                {!admin && <a className="glass-panel rounded px-4 py-2 text-sm font-bold" href="./index.html?admin=1">Admin</a>}
                 {onLogout && <IconButton icon={LogOut} label="Log out" onClick={onLogout} />}
               </div>
             </div>
@@ -599,7 +598,7 @@
 
         useEffect(() => {
           supabase.from('mivtza_config').select('*').limit(1).maybeSingle().then(({ data }) => setConfig(data || {}));
-        }, [client]);
+        }, []);
 
         const score = calculateScore(entry, config);
 
@@ -715,7 +714,8 @@
         const [rules, setRules] = useState({});
         const [loading, setLoading] = useState(true);
         const [message, setMessage] = useState('');
-        const [msgType, setMsgType] = useState('info'); // 'info' | 'error'
+        const [msgType, setMsgType] = useState('info');
+        const [rosterSearch, setRosterSearch] = useState('');
 
         // Registration state
         const [newCamper, setNewCamper] = useState({ name: '', nfc_id: '' });
@@ -817,7 +817,7 @@
         // ── Inline edit save ────────────────────────────────────────────────
         const saveEdit = async () => {
           if (!editRow) return;
-          const { error } = await client
+          const { error } = await supabase
             .from(CAMPER_WRITE_TABLE)
             .update({ name: editRow.name, nfc_id: editRow.nfc_id })
             .eq('id', editRow.id);
@@ -837,7 +837,7 @@
           const entryPayload = { camper_id: selected.id, entry_date: correction.entry_date };
           [...learningKeys, ...hanhagaKeys].forEach((key) => (entryPayload[key] = correction[key]));
           const { error: entryError } = await supabase.from('daily_entries').upsert(entryPayload, { onConflict: 'camper_id,entry_date' });
-          const { error: camperError } = await client
+          const { error: camperError } = await supabase
             .from(CAMPER_WRITE_TABLE)
             .update({ manual_points_adjustment: Number(correction.manual_points_adjustment || 0) })
             .eq('id', selected.id);
@@ -878,9 +878,22 @@
 
               {/* ── Roster ── */}
               <section className="glass-panel overflow-hidden rounded-lg shadow-luxury">
-                <div className="flex items-center gap-2 border-b line-border p-4">
-                  <Users className="accent-text" />
+                <div className="flex flex-wrap items-center gap-3 border-b line-border p-4">
+                  <Users className="accent-text shrink-0" />
                   <h2 className="text-xl font-extrabold">Camper Roster</h2>
+                  <label className="ml-auto flex items-center gap-2 glass-panel rounded px-3 py-2 min-w-[200px]">
+                    <ScanLine size={16} className="muted-text shrink-0" />
+                    <input
+                      className="bg-transparent text-sm font-semibold outline-none w-full placeholder:font-medium"
+                      placeholder="Search by name…"
+                      value={rosterSearch}
+                      onChange={(e) => setRosterSearch(e.target.value)}
+                    />
+                    {rosterSearch && <button onClick={() => setRosterSearch('')}><X size={14} /></button>}
+                  </label>
+                  <span className="muted-text text-xs font-semibold">
+                    {campers.filter(c => !rosterSearch || c.name?.toLowerCase().includes(rosterSearch.toLowerCase())).length} / {campers.length}
+                  </span>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[900px] text-left text-sm">
@@ -892,7 +905,7 @@
                       </tr>
                     </thead>
                     <tbody>
-                      {campers.map((camper) => {
+                      {campers.filter(c => !rosterSearch || c.name?.toLowerCase().includes(rosterSearch.toLowerCase())).map((camper) => {
                         const isEditing = editRow?.id === camper.id;
                         return (
                           <tr key={camper.id} className="border-t line-border">
