@@ -183,6 +183,7 @@
         ShieldCheck,
         Smartphone,
         Sparkles,
+        Trash2,
         Users,
         WalletCards,
         X,
@@ -721,8 +722,19 @@
         const [rules, setRules] = useState({});
         const [loading, setLoading] = useState(true);
         const [message, setMessage] = useState('');
-        const [newCamper, setNewCamper] = useState({ name: '', nfc_id: '' });
+        const [msgType, setMsgType] = useState('info'); // 'info' | 'error'
+
+        // Registration state
+        const [newCamper, setNewCamper] = useState({ name: '', nfc_id: '', card_status: 'Gold' });
+        const [regNfcListening, setRegNfcListening] = useState(false);
+        const regNdefRef = useRef(null);
+
+        // Inline edit state — null when not editing, camper object when editing
+        const [editRow, setEditRow] = useState(null);
+
         const [correction, setCorrection] = useState({ camper_id: '', entry_date: today(), ...blankEntry, manual_points_adjustment: 0 });
+
+        const notify = (text, type = 'info') => { setMessage(text); setMsgType(type); };
 
         const load = async () => {
           setLoading(true);
@@ -735,23 +747,90 @@
           setLoading(false);
         };
 
-        useEffect(() => {
-          if (client) load();
-        }, [client]);
+        useEffect(() => { if (client) load(); }, [client]);
 
-        const vip = campers.filter((camper) => Number(camper.weekly_points) >= Number(rules.vip_event_threshold ?? 700));
-        const standard = campers.filter((camper) => Number(camper.weekly_points) >= Number(rules.standard_event_threshold ?? 400) && Number(camper.weekly_points) < Number(rules.vip_event_threshold ?? 700));
-        const notEligible = campers.filter((camper) => Number(camper.weekly_points) < Number(rules.standard_event_threshold ?? 400));
+        const vip = campers.filter((c) => Number(c.weekly_points) >= Number(rules.vip_event_threshold ?? 700));
+        const standard = campers.filter((c) => Number(c.weekly_points) >= Number(rules.standard_event_threshold ?? 400) && Number(c.weekly_points) < Number(rules.vip_event_threshold ?? 700));
+        const notEligible = campers.filter((c) => Number(c.weekly_points) < Number(rules.standard_event_threshold ?? 400));
 
-        const registerCamper = async () => {
-          const { error } = await client.from(CAMPER_TABLE).insert({ name: newCamper.name.trim(), nfc_id: newCamper.nfc_id.trim() });
-          setMessage(error ? error.message : 'Camper registered.');
-          if (!error) setNewCamper({ name: '', nfc_id: '' });
-          load();
+        // ── NFC scan for registration ───────────────────────────────────────
+        const startRegNfcScan = async () => {
+          if (!('NDEFReader' in window) || !window.isSecureContext) {
+            notify('Web NFC not available here — type the card ID manually.', 'error');
+            return;
+          }
+          try {
+            const ndef = new NDEFReader();
+            regNdefRef.current = ndef;
+            ndef.onreading = (event) => {
+              const serial = event.serialNumber;
+              setRegNfcListening(false);
+              if (serial) {
+                setNewCamper((prev) => ({ ...prev, nfc_id: serial }));
+                notify(`Card scanned: ${serial}`);
+              } else {
+                notify('Card read but no serial number returned.', 'error');
+              }
+            };
+            await ndef.scan();
+            setRegNfcListening(true);
+            notify('Tap the card to the back of the device…');
+          } catch (err) {
+            setRegNfcListening(false);
+            notify(err.message || 'NFC scan failed.', 'error');
+          }
         };
 
+        // ── Register ────────────────────────────────────────────────────────
+        const registerCamper = async () => {
+          if (!newCamper.name.trim()) { notify('Please enter a camper name.', 'error'); return; }
+          if (!newCamper.nfc_id.trim()) { notify('Please enter or scan a card ID.', 'error'); return; }
+          const payload = {
+            name: newCamper.name.trim(),
+            nfc_id: newCamper.nfc_id.trim(),
+            card_status: newCamper.card_status || 'Gold',
+          };
+          const { error } = await client.from(CAMPER_TABLE).insert(payload);
+          if (error) {
+            notify(`Register failed: ${error.message}`, 'error');
+          } else {
+            setNewCamper({ name: '', nfc_id: '', card_status: 'Gold' });
+            notify('Camper registered ✓');
+            load();
+          }
+        };
+
+        // ── Delete ──────────────────────────────────────────────────────────
+        const deleteCamper = async (camper) => {
+          if (!window.confirm(`Delete "${camper.name}"? This cannot be undone.`)) return;
+          const { error } = await client.from(CAMPER_TABLE).delete().eq('id', camper.id);
+          if (error) {
+            notify(`Delete failed: ${error.message}`, 'error');
+          } else {
+            notify(`${camper.name} deleted.`);
+            load();
+          }
+        };
+
+        // ── Inline edit save ────────────────────────────────────────────────
+        const saveEdit = async () => {
+          if (!editRow) return;
+          const { error } = await client
+            .from(CAMPER_TABLE)
+            .update({ name: editRow.name, nfc_id: editRow.nfc_id, card_status: editRow.card_status })
+            .eq('id', editRow.id);
+          if (error) {
+            notify(`Save failed: ${error.message}`, 'error');
+          } else {
+            setEditRow(null);
+            notify('Camper updated ✓');
+            load();
+          }
+        };
+
+        // ── Correction ──────────────────────────────────────────────────────
         const saveCorrection = async () => {
-          const selected = campers.find((camper) => String(camper.id) === String(correction.camper_id));
+          const selected = campers.find((c) => String(c.id) === String(correction.camper_id));
           if (!selected) return;
           const entryPayload = { camper_id: selected.id, entry_date: correction.entry_date };
           [...learningKeys, ...hanhagaKeys].forEach((key) => (entryPayload[key] = correction[key]));
@@ -760,7 +839,7 @@
             .from(CAMPER_TABLE)
             .update({ manual_points_adjustment: Number(correction.manual_points_adjustment || 0) })
             .eq('id', selected.id);
-          setMessage(entryError?.message || camperError?.message || 'Correction saved.');
+          notify(entryError?.message || camperError?.message || 'Correction saved ✓', (entryError || camperError) ? 'error' : 'info');
           load();
         };
 
@@ -769,7 +848,7 @@
           const id = payload.id;
           const query = id ? client.from('mivtza_config').update(payload).eq('id', id) : client.from('mivtza_config').upsert(payload);
           const { error } = await query;
-          setMessage(error ? error.message : 'System rules saved.');
+          notify(error ? `Save failed: ${error.message}` : 'System rules saved ✓', error ? 'error' : 'info');
           load();
         };
 
@@ -780,6 +859,10 @@
             </Shell>
           );
         }
+
+        const msgClass = msgType === 'error'
+          ? 'border-red-400/40 bg-red-500/10 text-red-600'
+          : 'glass-panel';
 
         return (
           <Shell admin status="Platinum">
@@ -793,37 +876,74 @@
               </div>
 
               {message && (
-                <div className="glass-panel flex items-center justify-between rounded-lg p-4 font-semibold">
+                <div className={`flex items-center justify-between rounded-lg border p-4 font-semibold ${msgClass}`}>
                   <span>{message}</span>
                   <button onClick={() => setMessage('')}><X size={18} /></button>
                 </div>
               )}
 
+              {/* ── Roster ── */}
               <section className="glass-panel overflow-hidden rounded-lg shadow-luxury">
                 <div className="flex items-center gap-2 border-b line-border p-4">
                   <Users className="accent-text" />
                   <h2 className="text-xl font-extrabold">Camper Roster</h2>
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[850px] text-left text-sm">
+                  <table className="w-full min-w-[900px] text-left text-sm">
                     <thead className="accent-bg">
                       <tr>
-                        {['Name', 'NFC ID', 'Card Status', 'Weekly Points', 'Lifetime Points', 'Weekly Event Status'].map((head) => (
+                        {['Name', 'NFC ID', 'Card Status', 'Weekly Pts', 'Lifetime Pts', 'Event Status', ''].map((head) => (
                           <th key={head} className="px-4 py-3 font-extrabold">{head}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {campers.map((camper) => (
-                        <tr key={camper.id} className="border-t line-border">
-                          <td className="px-4 py-3 font-bold">{camper.name}</td>
-                          <td className="px-4 py-3">{camper.nfc_id}</td>
-                          <td className="px-4 py-3">{displayValue(camper.card_status)}</td>
-                          <td className="px-4 py-3">{displayValue(camper.weekly_points)}</td>
-                          <td className="px-4 py-3">{displayValue(camper.total_points)}</td>
-                          <td className="px-4 py-3">{displayValue(camper.weekly_event_status)}</td>
-                        </tr>
-                      ))}
+                      {campers.map((camper) => {
+                        const isEditing = editRow?.id === camper.id;
+                        return (
+                          <tr key={camper.id} className="border-t line-border">
+                            <td className="px-4 py-2">
+                              {isEditing
+                                ? <input className="w-full rounded border line-border bg-transparent px-2 py-1 font-bold" value={editRow.name} onChange={(e) => setEditRow({ ...editRow, name: e.target.value })} />
+                                : <span className="font-bold">{camper.name}</span>}
+                            </td>
+                            <td className="px-4 py-2">
+                              {isEditing
+                                ? <input className="w-full rounded border line-border bg-transparent px-2 py-1 font-mono text-xs" value={editRow.nfc_id} onChange={(e) => setEditRow({ ...editRow, nfc_id: e.target.value })} />
+                                : <span className="font-mono text-xs">{camper.nfc_id}</span>}
+                            </td>
+                            <td className="px-4 py-2">
+                              {isEditing
+                                ? (
+                                  <select className="rounded border line-border bg-transparent px-2 py-1 font-bold" value={editRow.card_status} onChange={(e) => setEditRow({ ...editRow, card_status: e.target.value })}>
+                                    <option>Gold</option>
+                                    <option>Platinum</option>
+                                    <option>Black</option>
+                                  </select>
+                                )
+                                : displayValue(camper.card_status)}
+                            </td>
+                            <td className="px-4 py-2">{displayValue(camper.weekly_points)}</td>
+                            <td className="px-4 py-2">{displayValue(camper.total_points)}</td>
+                            <td className="px-4 py-2">{displayValue(camper.weekly_event_status)}</td>
+                            <td className="px-4 py-2">
+                              <div className="flex items-center gap-1">
+                                {isEditing ? (
+                                  <>
+                                    <button onClick={saveEdit} className="focus-ring inline-flex h-8 w-8 items-center justify-center rounded border line-border hover:scale-105" title="Save"><Save size={15} /></button>
+                                    <button onClick={() => setEditRow(null)} className="focus-ring inline-flex h-8 w-8 items-center justify-center rounded border line-border hover:scale-105" title="Cancel"><X size={15} /></button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <button onClick={() => setEditRow({ ...camper })} className="focus-ring inline-flex h-8 w-8 items-center justify-center rounded border line-border hover:scale-105" title="Edit"><PencilLine size={15} /></button>
+                                    <button onClick={() => deleteCamper(camper)} className="focus-ring inline-flex h-8 w-8 items-center justify-center rounded border border-red-400/40 text-red-500 hover:scale-105" title="Delete"><Trash2 size={15} /></button>
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -836,12 +956,40 @@
               </section>
 
               <section className="grid gap-5 lg:grid-cols-2">
+                {/* ── Register Camper ── */}
                 <div className="glass-panel rounded-lg p-5">
                   <h2 className="mb-4 flex items-center gap-2 text-xl font-extrabold"><Plus className="accent-text" /> Register Camper</h2>
                   <div className="grid gap-3">
-                    <TextInput icon={Users} placeholder="Camper name" value={newCamper.name} onChange={(event) => setNewCamper({ ...newCamper, name: event.target.value })} />
-                    <TextInput icon={ScanLine} placeholder="Scan NFC card ID" value={newCamper.nfc_id} onChange={(event) => setNewCamper({ ...newCamper, nfc_id: event.target.value })} />
-                    <button className="app-button focus-ring rounded px-5 py-3 font-extrabold" onClick={registerCamper}>Register</button>
+                    <TextInput icon={Users} placeholder="Camper name" value={newCamper.name} onChange={(e) => setNewCamper({ ...newCamper, name: e.target.value })} />
+                    <div className="flex gap-2">
+                      <label className="glass-panel flex flex-1 items-center gap-3 rounded px-3 py-2">
+                        <ScanLine size={18} className="muted-text shrink-0" />
+                        <input
+                          className="focus-ring min-w-0 flex-1 bg-transparent py-2 text-sm font-semibold outline-none placeholder:font-medium font-mono"
+                          placeholder="Card ID (scan or type)"
+                          value={newCamper.nfc_id}
+                          onChange={(e) => setNewCamper({ ...newCamper, nfc_id: e.target.value })}
+                        />
+                      </label>
+                      <button
+                        onClick={startRegNfcScan}
+                        disabled={regNfcListening}
+                        className="lux-card focus-ring flex items-center gap-2 rounded px-4 py-2 text-sm font-extrabold disabled:opacity-70"
+                        title="Tap card to scan NFC"
+                      >
+                        {regNfcListening ? <RefreshCw size={16} className="animate-spin" /> : <Smartphone size={16} />}
+                        {regNfcListening ? 'Listening…' : 'Tap Card'}
+                      </button>
+                    </div>
+                    <div>
+                      <label className="muted-text mb-1 block text-xs font-extrabold uppercase tracking-[0.1em]">Card Tier</label>
+                      <select className="focus-ring w-full rounded border line-border bg-transparent px-3 py-3 font-bold" value={newCamper.card_status} onChange={(e) => setNewCamper({ ...newCamper, card_status: e.target.value })}>
+                        <option value="Gold">Gold</option>
+                        <option value="Platinum">Platinum</option>
+                        <option value="Black">Black</option>
+                      </select>
+                    </div>
+                    <button className="app-button focus-ring rounded px-5 py-3 font-extrabold" onClick={registerCamper}>Register Camper</button>
                   </div>
                 </div>
 
@@ -854,12 +1002,12 @@
               <section className="glass-panel rounded-lg p-5">
                 <h2 className="mb-4 flex items-center gap-2 text-xl font-extrabold"><PencilLine className="accent-text" /> Data Correction Panel</h2>
                 <div className="grid gap-4 lg:grid-cols-[1fr_12rem_10rem]">
-                  <select className="focus-ring rounded border line-border bg-transparent px-3 py-3 font-bold" value={correction.camper_id} onChange={(event) => setCorrection({ ...correction, camper_id: event.target.value })}>
+                  <select className="focus-ring rounded border line-border bg-transparent px-3 py-3 font-bold" value={correction.camper_id} onChange={(e) => setCorrection({ ...correction, camper_id: e.target.value })}>
                     <option value="">Select camper</option>
-                    {campers.map((camper) => <option key={camper.id} value={camper.id}>{camper.name}</option>)}
+                    {campers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
-                  <input className="focus-ring rounded border line-border bg-transparent px-3 py-3 font-bold" type="date" value={correction.entry_date} onChange={(event) => setCorrection({ ...correction, entry_date: event.target.value })} />
-                  <input className="focus-ring rounded border line-border bg-transparent px-3 py-3 font-bold" type="number" placeholder="Manual pts" value={correction.manual_points_adjustment} onChange={(event) => setCorrection({ ...correction, manual_points_adjustment: event.target.value })} />
+                  <input className="focus-ring rounded border line-border bg-transparent px-3 py-3 font-bold" type="date" value={correction.entry_date} onChange={(e) => setCorrection({ ...correction, entry_date: e.target.value })} />
+                  <input className="focus-ring rounded border line-border bg-transparent px-3 py-3 font-bold" type="number" placeholder="Manual pts" value={correction.manual_points_adjustment} onChange={(e) => setCorrection({ ...correction, manual_points_adjustment: e.target.value })} />
                 </div>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   {[...learningKeys, ...hanhagaKeys].map((key) => (
@@ -878,7 +1026,7 @@
                       <input
                         className="focus-ring rounded border line-border bg-transparent px-3 py-3 font-bold"
                         value={value ?? ''}
-                        onChange={(event) => setRules({ ...rules, [key]: event.target.value })}
+                        onChange={(e) => setRules({ ...rules, [key]: e.target.value })}
                       />
                     </label>
                   ))}
