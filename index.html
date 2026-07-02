@@ -734,7 +734,7 @@
         const [msgType, setMsgType] = useState('info'); // 'info' | 'error'
 
         // Registration state
-        const [newCamper, setNewCamper] = useState({ name: '', nfc_id: '', card_status: 'Gold' });
+        const [newCamper, setNewCamper] = useState({ name: '', nfc_id: '' });
         const [regNfcListening, setRegNfcListening] = useState(false);
         const regNdefRef = useRef(null);
 
@@ -797,13 +797,12 @@
           const payload = {
             name: newCamper.name.trim(),
             nfc_id: newCamper.nfc_id.trim(),
-            card_status: newCamper.card_status || 'Gold',
           };
           const { error } = await client.from(CAMPER_WRITE_TABLE).insert(payload);
           if (error) {
             notify(`Register failed: ${error.message}`, 'error');
           } else {
-            setNewCamper({ name: '', nfc_id: '', card_status: 'Gold' });
+            setNewCamper({ name: '', nfc_id: '' });
             notify('Camper registered ✓');
             load();
           }
@@ -826,7 +825,7 @@
           if (!editRow) return;
           const { error } = await client
             .from(CAMPER_WRITE_TABLE)
-            .update({ name: editRow.name, nfc_id: editRow.nfc_id, card_status: editRow.card_status })
+            .update({ name: editRow.name, nfc_id: editRow.nfc_id })
             .eq('id', editRow.id);
           if (error) {
             notify(`Save failed: ${error.message}`, 'error');
@@ -922,15 +921,7 @@
                                 : <span className="font-mono text-xs">{camper.nfc_id}</span>}
                             </td>
                             <td className="px-4 py-2">
-                              {isEditing
-                                ? (
-                                  <select className="rounded border line-border bg-transparent px-2 py-1 font-bold" value={editRow.card_status} onChange={(e) => setEditRow({ ...editRow, card_status: e.target.value })}>
-                                    <option>Gold</option>
-                                    <option>Platinum</option>
-                                    <option>Black</option>
-                                  </select>
-                                )
-                                : displayValue(camper.card_status)}
+                              {displayValue(camper.card_status)}
                             </td>
                             <td className="px-4 py-2">{displayValue(camper.weekly_points)}</td>
                             <td className="px-4 py-2">{displayValue(camper.total_points)}</td>
@@ -989,14 +980,6 @@
                         {regNfcListening ? <RefreshCw size={16} className="animate-spin" /> : <Smartphone size={16} />}
                         {regNfcListening ? 'Listening…' : 'Tap Card'}
                       </button>
-                    </div>
-                    <div>
-                      <label className="muted-text mb-1 block text-xs font-extrabold uppercase tracking-[0.1em]">Card Tier</label>
-                      <select className="focus-ring w-full rounded border line-border bg-transparent px-3 py-3 font-bold" value={newCamper.card_status} onChange={(e) => setNewCamper({ ...newCamper, card_status: e.target.value })}>
-                        <option value="Gold">Gold</option>
-                        <option value="Platinum">Platinum</option>
-                        <option value="Black">Black</option>
-                      </select>
                     </div>
                     <button className="app-button focus-ring rounded px-5 py-3 font-extrabold" onClick={registerCamper}>Register Camper</button>
                   </div>
