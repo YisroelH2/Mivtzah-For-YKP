@@ -161,6 +161,37 @@
         0%, 100% { opacity: .32; transform: scale(.82); }
         50% { opacity: .9; transform: scale(1); }
       }
+
+      /* ── Premium text shimmer ─────────────────────────────────────────────
+         Sweeps a metallic highlight across key figures (name, tier, points).
+         Uses background-clip:text so the shine rides on top of the letters.
+         The card-border animation above is completely untouched.          ── */
+      :root          { --sh1: #c89c3b; --sh2: #fff8e0; --sh3: #f1d38b; }
+      [data-theme='Platinum'] { --sh1: #8fb8cc; --sh2: #ffffff; --sh3: #c8e8ff; }
+      [data-theme='Black']    { --sh1: #b8b4ac; --sh2: #ffffff; --sh3: #e8e4dc; }
+
+      @keyframes shimmer-text {
+        0%   { background-position: 160% center; }
+        100% { background-position: -160% center; }
+      }
+
+      .shimmer-text {
+        background: linear-gradient(
+          90deg,
+          var(--text)  0%,
+          var(--text)  28%,
+          var(--sh1)   40%,
+          var(--sh2)   50%,
+          var(--sh1)   60%,
+          var(--text)  72%,
+          var(--text)  100%
+        );
+        background-size: 280% auto;
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        animation: shimmer-text 5s ease-in-out infinite;
+      }
     </style>
   </head>
   <body>
@@ -564,7 +595,7 @@
               <Icon size={16} />
               <span className="text-xs font-bold uppercase tracking-[0.12em]">{label}</span>
             </div>
-            <p className="text-2xl font-extrabold">{displayValue(value) || displayValue(0)}</p>
+            <p className="text-2xl font-extrabold shimmer-text">{displayValue(value) || displayValue(0)}</p>
           </div>
         );
       }
@@ -644,7 +675,7 @@
                 <div className="grid gap-4 lg:grid-cols-[1.4fr_.8fr_.8fr_.8fr]">
                   <div>
                     <p className="text-xs font-extrabold uppercase tracking-[0.18em] opacity-70">Cardmember</p>
-                    <h1 className="mt-2 text-4xl font-extrabold">{camper.name}</h1>
+                    <h1 className="mt-2 text-4xl font-extrabold shimmer-text">{camper.name}</h1>
                   </div>
                   <Stat label="Tier" value={status} icon={WalletCards} />
                   <Stat label="Lifetime" value={camper.total_points} icon={Award} />
