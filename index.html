@@ -398,31 +398,27 @@
           setError('');
           setNfcMessage('');
           const target = normalizeNfcId(nfcId);
-          const { data, error: fetchError, status, statusText } = await supabase.from(CAMPER_READ_TABLE).select('*');
+          const { data, error: fetchError, status } = await supabase.from(CAMPER_READ_TABLE).select('*');
           setBusy(false);
           setScan('');
-          // eslint-disable-next-line no-console
           console.log('[Mivtza] fetchCamper', {
-            table: CAMPER_READ_TABLE,
-            supabaseUrl: config.url,
             httpStatus: status,
-            httpStatusText: statusText,
             rowsReturned: data ? data.length : null,
             scannedRaw: nfcId,
             scannedNormalized: target,
             storedNfcIds: (data || []).map((row) => ({ name: row.name, raw: row.nfc_id, normalized: normalizeNfcId(row.nfc_id) })),
           });
           if (fetchError) {
-            setError(`Supabase error: ${fetchError.message} (check the URL/anon key in Admin > Backend Settings)`);
+            setError(`Supabase error: ${fetchError.message}`);
             return;
           }
           if (!data || data.length === 0) {
-            setError(`Connected to Supabase, but the "${CAMPER_READ_TABLE}" table returned 0 rows. This usually means the URL/anon key saved on this device points to a different project than the one you're viewing in the dashboard, or Row Level Security is blocking anonymous reads.`);
+            setError(`No campers found in "${CAMPER_READ_TABLE}". Check that the table has rows and RLS allows anon reads.`);
             return;
           }
           const match = data.find((row) => normalizeNfcId(row.nfc_id) === target);
           if (!match) {
-            setError(`No camper found with that card. Scanned ID "${nfcId}" didn't match any of the ${data.length} camper(s) loaded from "${CAMPER_READ_TABLE}". Open the browser console for the full comparison list.`);
+            setError(`Card not recognized. Scanned "${nfcId}" — check the console for the full ID comparison list.`);
             return;
           }
           onCamper(match);
