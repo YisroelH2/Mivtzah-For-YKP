@@ -396,46 +396,32 @@
         const fetchCamper = async (nfcId) => {
           setBusy(true);
           setError('');
-          setNfcMessage(`Looking up card: ${nfcId}`);
+          setNfcMessage('Looking up card…');
           try {
             const target = normalizeNfcId(nfcId);
-            setNfcMessage(`Querying Supabase for ${target}…`);
             const { data, error: fetchError } = await supabase.from(CAMPER_READ_TABLE).select('*');
             setBusy(false);
             setScan('');
-
+            setNfcMessage('');
             if (fetchError) {
-              const msg = `Supabase error: ${fetchError.message}`;
-              setError(msg);
-              setNfcMessage('');
-              window.alert(msg);
+              setError(`Supabase error: ${fetchError.message}`);
               return;
             }
             if (!data || data.length === 0) {
-              const msg = `"${CAMPER_READ_TABLE}" returned 0 rows — RLS may be blocking anon reads.`;
-              setError(msg);
-              setNfcMessage('');
-              window.alert(msg);
+              setError(`No campers found — RLS may be blocking anonymous reads on "${CAMPER_READ_TABLE}".`);
               return;
             }
             const match = data.find((row) => normalizeNfcId(row.nfc_id) === target);
             if (!match) {
-              const ids = data.map((r) => `${r.name}: "${r.nfc_id}"`).join('\n');
-              const msg = `Card "${nfcId}" not found.\n\nStored cards:\n${ids}`;
-              setError(`Card not recognized — scanned "${nfcId}". See console for stored IDs.`);
-              setNfcMessage('');
-              window.alert(msg);
+              setError('Card not recognized. Register it in the admin portal first.');
               return;
             }
-            setNfcMessage('');
             onCamper(match);
           } catch (err) {
             setBusy(false);
             setScan('');
-            const msg = `Unexpected error: ${err.message}`;
-            setError(msg);
             setNfcMessage('');
-            window.alert(msg);
+            setError(`Error: ${err.message}`);
           }
         };
 
@@ -583,6 +569,25 @@
             {label}
           </button>
         );
+      }
+
+      class ErrorBoundary extends React.Component {
+        constructor(props) { super(props); this.state = { error: null }; }
+        static getDerivedStateFromError(error) { return { error }; }
+        render() {
+          if (this.state.error) {
+            return (
+              <div className="mx-auto mt-10 max-w-lg rounded-lg border border-red-400/40 bg-red-500/10 p-6 text-red-600">
+                <p className="text-lg font-extrabold">Something went wrong loading this screen.</p>
+                <p className="mt-2 break-all text-sm font-semibold">{this.state.error.message}</p>
+                <button className="mt-4 rounded border border-red-400/40 px-4 py-2 font-bold" onClick={() => this.setState({ error: null })}>
+                  Try Again
+                </button>
+              </div>
+            );
+          }
+          return this.props.children;
+        }
       }
 
       function CamperDashboard({ camper, onLogout }) {
@@ -1042,7 +1047,7 @@
           );
         }
 
-        if (camper) return <CamperDashboard camper={camper} onLogout={() => setCamper(null)} />;
+        if (camper) return <ErrorBoundary><CamperDashboard camper={camper} onLogout={() => setCamper(null)} /></ErrorBoundary>;
         return <LoginScreen onCamper={setCamper} />;
       }
 
