@@ -539,7 +539,7 @@
         );
       }
 
-      function LoginScreen({ onCamper, onAdmin, onTeacher }) {
+      function LoginScreen({ onCamper, onAdmin, onTeacher, onClub }) {
         const [scan, setScan] = useState('');
         const [busy, setBusy] = useState(false);
         const [cardNotFound, setCardNotFound] = useState(false);
@@ -598,11 +598,24 @@
               return;
             }
 
-            // Teacher card check
-            let teacherIds = [];
-            try { teacherIds = JSON.parse(cfgData?.teacher_cards || '[]'); } catch {}
-            if (teacherIds.some((id) => normalizeNfcId(id) === target)) {
-              onTeacher();
+            // Teacher card check (handles both old string[] and new object[] format)
+            let teacherCards = [];
+            try { teacherCards = JSON.parse(cfgData?.teacher_cards || '[]'); } catch {}
+            const teacherMatch = teacherCards.find((c) => normalizeNfcId(typeof c === 'string' ? c : (c.nfc_id||'')) === target);
+            if (teacherMatch) {
+              onTeacher(
+                typeof teacherMatch === 'string' ? '' : (teacherMatch.name || ''),
+                typeof teacherMatch === 'string' ? '' : (teacherMatch.bunk || ''),
+              );
+              return;
+            }
+
+            // Club card check (Chitas, etc.)
+            let clubCards = [];
+            try { clubCards = JSON.parse(cfgData?.club_cards || '[]'); } catch {}
+            const clubMatch = clubCards.find((c) => normalizeNfcId(c.nfc_id || '') === target);
+            if (clubMatch) {
+              onClub(clubMatch);
               return;
             }
 
@@ -829,17 +842,37 @@
         const [appConfig, setAppConfig] = useState(DEFAULT_CONFIG);
         const [entry, setEntry] = useState(() => getBlankEntry(DEFAULT_CONFIG));
         const [approved, setApproved] = useState(false);
+        const [alreadySubmitted, setAlreadySubmitted] = useState(false);
         const toast = useToast();
         const status = normalizeStatus(camper.card_status);
 
         useEffect(() => {
-          supabase.from('mivtza_config').select('config_json').limit(1).maybeSingle().then(({ data }) => {
-            if (data?.config_json) {
-              try {
-                const cfg = JSON.parse(data.config_json);
-                setAppConfig(cfg);
-                setEntry(getBlankEntry(cfg));
-              } catch {}
+          // Load config and check for an existing entry today in parallel
+          Promise.all([
+            supabase.from('mivtza_config').select('config_json').limit(1).maybeSingle(),
+            supabase.from('daily_entries')
+              .select('*')
+              .eq('camper_id', camper.id)
+              .eq('entry_date', today())
+              .maybeSingle(),
+          ]).then(([{ data: cfgData }, { data: existingEntry }]) => {
+            let cfg = DEFAULT_CONFIG;
+            if (cfgData?.config_json) try { cfg = JSON.parse(cfgData.config_json); } catch {}
+            setAppConfig(cfg);
+            if (existingEntry) {
+              // Pre-fill the form with what was already submitted
+              const filled = getBlankEntry(cfg);
+              Object.keys(filled).forEach((k) => {
+                if (existingEntry[k] !== undefined) filled[k] = existingEntry[k];
+              });
+              // Also check entry_data JSONB for extra items
+              if (existingEntry.entry_data) {
+                Object.entries(existingEntry.entry_data).forEach(([k, v]) => { filled[k] = v; });
+              }
+              setEntry(filled);
+              setAlreadySubmitted(true);
+            } else {
+              setEntry(getBlankEntry(cfg));
             }
           });
         }, []);
@@ -926,8 +959,13 @@
                     Counselor learning: shown after teacher submits
                     Hanhagos: {(appConfig.hanhaga_items||[]).filter(i=>entry[i.db_key]).length} / {(appConfig.hanhaga_items||[]).length} · Bonus: {(appConfig.hanhaga_items||[]).filter(i=>entry[i.db_key]).length * Number(appConfig.hanhaga_bonus_per_item??5)} pts
                   </p>
+                  {alreadySubmitted && (
+                    <div className="mt-4 rounded-xl border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-sm font-semibold text-amber-600">
+                      ✓ Already submitted today. Submitting again will update your entry.
+                    </div>
+                  )}
                   <button className="app-button focus-ring mt-5 flex w-full items-center justify-center gap-2 rounded px-5 py-4 text-lg font-extrabold" onClick={submit}>
-                    <BadgeCheck size={22} /> Submit
+                    <BadgeCheck size={22} /> {alreadySubmitted ? 'Update Submission' : 'Submit'}
                   </button>
                 </aside>
               </div>
@@ -1190,7 +1228,7 @@
           if (!editRow) return;
           const { error } = await supabase
             .from(CAMPER_WRITE_TABLE)
-            .update({ name: editRow.name, nfc_id: editRow.nfc_id })
+            .update({ name: editRow.name, nfc_id: editRow.nfc_id, bunk: editRow.bunk || null })
             .eq('id', editRow.id);
           if (error) toast.error(`Save failed: ${error.message}`);
           else { setEditRow(null); toast.success('Camper updated ✓'); load(); }
@@ -1314,7 +1352,7 @@
                   <table className="w-full min-w-[900px] text-left text-sm">
                     <thead className="accent-bg">
                       <tr>
-                        {['Name', 'NFC ID', 'Card Status', 'Weekly Pts', 'Lifetime Pts', 'Event Status', ''].map((head) => (
+                        {['Name', 'NFC ID', 'Bunk', 'Card Status', 'Weekly Pts', 'Lifetime Pts', 'Event Status', ''].map((head) => (
                           <th key={head} className="px-4 py-3 font-extrabold">{head}</th>
                         ))}
                       </tr>
@@ -1333,6 +1371,11 @@
                               {isEditing
                                 ? <input className="w-full rounded border line-border bg-transparent px-2 py-1 font-mono text-xs" value={editRow.nfc_id} onChange={(e) => setEditRow({ ...editRow, nfc_id: e.target.value })} />
                                 : <span className="font-mono text-xs">{camper.nfc_id}</span>}
+                            </td>
+                            <td className="px-4 py-2">
+                              {isEditing
+                                ? <input className="w-28 rounded border line-border bg-transparent px-2 py-1 text-xs font-semibold" placeholder="Bunk" value={editRow.bunk||''} onChange={(e) => setEditRow({ ...editRow, bunk: e.target.value })} />
+                                : <span className="text-xs font-semibold">{camper.bunk || '—'}</span>}
                             </td>
                             <td className="px-4 py-2">
                               {displayValue(camper.card_status)}
@@ -1410,6 +1453,9 @@
                   <PasscodePanel />
                 </div>
               </section>
+
+              {/* ── Club Portals ── */}
+              <ClubCardsPanel appConfig={appConfig} />
 
               <section className="glass-panel rounded-lg p-5">
                 <h2 className="mb-4 flex items-center gap-2 text-xl font-extrabold"><PencilLine className="accent-text" /> Data Correction Panel</h2>
@@ -1671,10 +1717,17 @@
       }
 
       // ── Teacher Cards Panel (admin section) ──────────────────────────────
+      // Helper — handle both old string format and new object format
+      function tcNfcId(c) { return typeof c === 'string' ? c : (c.nfc_id || ''); }
+      function tcBunk(c)  { return typeof c === 'string' ? '' : (c.bunk || ''); }
+      function tcName(c)  { return typeof c === 'string' ? '' : (c.name || ''); }
+
       function TeacherCardsPanel() {
         const [cards, setCards] = useState([]);
         const [configId, setConfigId] = useState(null);
         const [newId, setNewId] = useState('');
+        const [newName, setNewName] = useState('');
+        const [newBunk, setNewBunk] = useState('');
         const [saving, setSaving] = useState(false);
         const toast = useToast();
         const ndefRef = useRef(null);
@@ -1682,7 +1735,16 @@
 
         useEffect(() => {
           supabase.from('mivtza_config').select('id,teacher_cards').limit(1).maybeSingle().then(({ data }) => {
-            if (data) { setConfigId(data.id); try { if (data.teacher_cards) setCards(JSON.parse(data.teacher_cards)); } catch {} }
+            if (data) {
+              setConfigId(data.id);
+              try {
+                if (data.teacher_cards) {
+                  const parsed = JSON.parse(data.teacher_cards);
+                  // Migrate old string[] to object[]
+                  setCards(parsed.map((c) => typeof c === 'string' ? { nfc_id: c, name: '', bunk: '' } : c));
+                }
+              } catch {}
+            }
           });
         }, []);
 
@@ -1699,15 +1761,22 @@
 
         const addCard = (rawId) => {
           const id = rawId.trim(); if (!id) return;
-          if (cards.some((c) => normalizeNfcId(c) === normalizeNfcId(id))) { setNewId(''); return; }
-          persist([...cards, id]); setNewId('');
+          if (cards.some((c) => normalizeNfcId(tcNfcId(c)) === normalizeNfcId(id))) { setNewId(''); return; }
+          persist([...cards, { nfc_id: id, name: newName.trim(), bunk: newBunk.trim() }]);
+          setNewId(''); setNewName(''); setNewBunk('');
+        };
+
+        const updateCard = (idx, field, value) => {
+          const next = [...cards];
+          next[idx] = { ...next[idx], [field]: value };
+          persist(next);
         };
 
         const startScan = async () => {
           if (!('NDEFReader' in window) || !window.isSecureContext) { toast.warning('Web NFC not available here.'); return; }
           try {
             const ndef = new NDEFReader(); ndefRef.current = ndef;
-            ndef.onreading = (e) => { setListening(false); if (e.serialNumber) addCard(e.serialNumber); };
+            ndef.onreading = (e) => { setListening(false); if (e.serialNumber) setNewId(e.serialNumber); };
             await ndef.scan(); setListening(true);
           } catch { setListening(false); }
         };
@@ -1716,24 +1785,40 @@
           <div className="glass-panel rounded-lg p-5">
             <ToastStack toasts={toast.toasts} remove={toast.remove} />
             <h2 className="mb-1 flex items-center gap-2 text-xl font-extrabold"><Users className="accent-text" /> Teacher / Counselor Cards</h2>
-            <p className="muted-text mb-4 text-xs font-semibold">Synced to cloud. These cards open the Teacher Portal for marking learning items.</p>
-            <div className="flex gap-2 mb-3">
-              <label className="glass-panel flex flex-1 items-center gap-2 rounded px-3 py-2">
-                <ScanLine size={16} className="muted-text shrink-0" />
-                <input className="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none font-mono" placeholder="Card ID" value={newId} onChange={(e) => setNewId(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addCard(newId)} />
-              </label>
-              <button onClick={() => addCard(newId)} className="app-button focus-ring rounded px-3 py-2 font-extrabold text-sm"><Plus size={16} /></button>
-              <button onClick={startScan} disabled={listening || saving} className="lux-card focus-ring inline-flex items-center gap-1 rounded px-3 py-2 text-sm font-extrabold disabled:opacity-70">
-                {listening ? <RefreshCw size={14} className="animate-spin" /> : <Smartphone size={14} />}
-                {listening ? 'Tap…' : 'Scan'}
-              </button>
+            <p className="muted-text mb-4 text-xs font-semibold">Each card can be assigned a name and a bunk/class — the portal will only show that bunk's students.</p>
+
+            {/* New card form */}
+            <div className="grid gap-2 mb-4">
+              <div className="flex gap-2">
+                <label className="glass-panel flex flex-1 items-center gap-2 rounded px-3 py-2">
+                  <ScanLine size={16} className="muted-text shrink-0" />
+                  <input className="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none font-mono" placeholder="Card ID" value={newId} onChange={(e) => setNewId(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addCard(newId)} />
+                </label>
+                <button onClick={startScan} disabled={listening || saving} className="lux-card focus-ring inline-flex items-center gap-1 rounded px-3 py-2 text-sm font-extrabold disabled:opacity-70">
+                  {listening ? <RefreshCw size={14} className="animate-spin" /> : <Smartphone size={14} />}
+                  {listening ? 'Tap…' : 'Scan'}
+                </button>
+              </div>
+              <div className="flex gap-2">
+                <input className="glass-panel flex-1 rounded px-3 py-2 bg-transparent text-sm font-semibold outline-none" placeholder="Teacher name (e.g. Rabbi Cohen)" value={newName} onChange={(e) => setNewName(e.target.value)} />
+                <input className="glass-panel w-36 rounded px-3 py-2 bg-transparent text-sm font-semibold outline-none" placeholder="Bunk/Class" value={newBunk} onChange={(e) => setNewBunk(e.target.value)} />
+                <button onClick={() => addCard(newId)} className="app-button focus-ring rounded px-3 py-2 font-extrabold text-sm"><Plus size={16} /></button>
+              </div>
             </div>
+
+            {/* Existing cards */}
             <div className="grid gap-2">
               {cards.length === 0 && <p className="muted-text text-sm font-semibold">No teacher cards yet.</p>}
-              {cards.map((id) => (
-                <div key={id} className="flex items-center justify-between rounded border line-border px-3 py-2">
-                  <span className="font-mono text-xs font-semibold">{id}</span>
-                  <button onClick={() => persist(cards.filter((c) => c !== id))} className="text-red-500 hover:scale-105"><Trash2 size={15} /></button>
+              {cards.map((card, idx) => (
+                <div key={tcNfcId(card)} className="glass-panel rounded-lg p-3 grid gap-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-xs font-semibold muted-text">{tcNfcId(card)}</span>
+                    <button onClick={() => persist(cards.filter((_, i) => i !== idx))} className="text-red-500 hover:scale-105"><Trash2 size={15} /></button>
+                  </div>
+                  <div className="flex gap-2">
+                    <input className="flex-1 bg-transparent text-sm font-semibold outline-none border-b line-border pb-1" placeholder="Teacher name" value={tcName(card)} onChange={(e) => updateCard(idx, 'name', e.target.value)} onBlur={() => persist([...cards])} />
+                    <input className="w-32 bg-transparent text-sm font-semibold outline-none border-b line-border pb-1" placeholder="Bunk" value={tcBunk(card)} onChange={(e) => updateCard(idx, 'bunk', e.target.value)} onBlur={() => persist([...cards])} />
+                  </div>
                 </div>
               ))}
             </div>
@@ -1742,9 +1827,9 @@
       }
 
       // ── Teacher Portal ────────────────────────────────────────────────────
-      function TeacherPortal({ onLogout }) {
+      function TeacherPortal({ onLogout, teacherName, bunk }) {
         const [appConfig, setAppConfig] = useState(DEFAULT_CONFIG);
-        const [campers, setCampers] = useState([]);
+        const [allCampers, setAllCampers] = useState([]);
         const [search, setSearch] = useState('');
         const [selected, setSelected] = useState(null);
         const [date, setDate] = useState(today());
@@ -1753,6 +1838,12 @@
         const [submitted, setSubmitted] = useState(false);
         const toast = useToast();
         const ndefRef = useRef(null);
+        const nfcProcessingRef = useRef(false); // debounce multiple reads
+
+        // Filter campers to assigned bunk (or all if no bunk assigned)
+        const campers = bunk
+          ? allCampers.filter((c) => c.bunk === bunk)
+          : allCampers;
 
         useEffect(() => {
           Promise.all([
@@ -1760,7 +1851,7 @@
             supabase.from(CAMPER_READ_TABLE).select('*').order('name'),
           ]).then(([{ data: cfg }, { data: roster }]) => {
             if (cfg?.config_json) try { setAppConfig(JSON.parse(cfg.config_json)); } catch {}
-            setCampers(roster || []);
+            setAllCampers(roster || []);
           });
         }, []);
 
@@ -1771,11 +1862,15 @@
           try {
             const ndef = new NDEFReader(); ndefRef.current = ndef;
             ndef.onreading = (e) => {
+              // Debounce: NFC hardware often fires onreading 3-5× per tap
+              if (nfcProcessingRef.current) return;
+              nfcProcessingRef.current = true;
+              setTimeout(() => { nfcProcessingRef.current = false; }, 2500);
               setNfcListening(false);
               const target = normalizeNfcId(e.serialNumber || '');
               const match = campers.find((c) => normalizeNfcId(c.nfc_id) === target);
               if (match) selectCamper(match);
-              else toast.warning('Card not found in roster.');
+              else toast.warning('Card not in your class roster.');
             };
             await ndef.scan(); setNfcListening(true);
           } catch { setNfcListening(false); }
@@ -1808,6 +1903,13 @@
               <div className="mb-5">
                 <p className="accent-text text-sm font-extrabold uppercase tracking-[0.2em]">Teacher / Counselor Portal</p>
                 <h1 className="mt-1 text-3xl font-extrabold">Mark Student Progress</h1>
+                {(teacherName || bunk) && (
+                  <p className="muted-text mt-1 text-sm font-semibold">
+                    {teacherName && <span>{teacherName}</span>}
+                    {bunk && <span className="ml-2 accent-text font-extrabold">· {bunk}</span>}
+                    {bunk && <span className="muted-text"> ({campers.length} students)</span>}
+                  </p>
+                )}
               </div>
 
               {!selected ? (
@@ -1887,19 +1989,222 @@
         );
       }
 
+      // ── Club Portal (Chitas, etc.) ────────────────────────────────────────
+      // Operator scans their card → tap students through one by one →
+      // each tap auto-credits the configured items instantly, no UI needed.
+      function ClubPortal({ onLogout, club }) {
+        const [appConfig, setAppConfig] = useState(DEFAULT_CONFIG);
+        const [allCampers, setAllCampers] = useState([]);
+        const [lastResult, setLastResult] = useState(null); // {name, success}
+        const [nfcActive, setNfcActive] = useState(false);
+        const toast = useToast();
+        const ndefRef = useRef(null);
+        const processingRef = useRef(false);
+
+        useEffect(() => {
+          Promise.all([
+            supabase.from('mivtza_config').select('config_json').limit(1).maybeSingle(),
+            supabase.from(CAMPER_READ_TABLE).select('*'),
+          ]).then(([{ data: cfg }, { data: roster }]) => {
+            if (cfg?.config_json) try { setAppConfig(JSON.parse(cfg.config_json)); } catch {}
+            setAllCampers(roster || []);
+          });
+        }, []);
+
+        const creditStudent = async (nfcId) => {
+          const target = normalizeNfcId(nfcId);
+          const camper = allCampers.find((c) => normalizeNfcId(c.nfc_id) === target);
+          if (!camper) { setLastResult({ name: `Unknown (${nfcId})`, success: false }); return; }
+
+          // Build the entry payload for just the club's items
+          const known = { camper_id: camper.id, entry_date: today() };
+          const extra = {};
+          const itemsToCredit = club.items || [];
+          itemsToCredit.forEach((key) => {
+            if (KNOWN_ENTRY_COLUMNS.has(key)) known[key] = true;
+            else extra[key] = true;
+          });
+          if (Object.keys(extra).length) known.entry_data = extra;
+
+          const { error } = await supabase.from('daily_entries').upsert(known, { onConflict: 'camper_id,entry_date' });
+          setLastResult({ name: camper.name, success: !error });
+          if (error) toast.error(`${camper.name}: ${error.message}`);
+        };
+
+        const startNfc = async () => {
+          if (!('NDEFReader' in window) || !window.isSecureContext) { toast.warning('NFC not available.'); return; }
+          try {
+            const ndef = new NDEFReader(); ndefRef.current = ndef;
+            ndef.onreading = (e) => {
+              if (processingRef.current) return;
+              processingRef.current = true;
+              setTimeout(() => { processingRef.current = false; }, 2500);
+              if (e.serialNumber) creditStudent(e.serialNumber);
+            };
+            await ndef.scan(); setNfcActive(true);
+          } catch (err) { toast.error(err.message); }
+        };
+
+        const itemLabels = (club.items || []).map((key) => {
+          const all = [...(appConfig.learning_items||[]), ...(appConfig.hanhaga_items||[]), ...(appConfig.teacher_items||[])];
+          return all.find((i) => i.db_key === key)?.label || key;
+        });
+
+        return (
+          <Shell status="Gold" onLogout={onLogout}>
+            <ToastStack toasts={toast.toasts} remove={toast.remove} />
+            <div className="mx-auto grid min-h-[calc(100vh-7rem)] max-w-lg place-items-center">
+              <section className="grid w-full gap-6 text-center">
+                <div>
+                  <p className="accent-text text-sm font-extrabold uppercase tracking-[0.28em]">{club.name || 'Club Portal'}</p>
+                  <h1 className="mt-2 text-3xl font-extrabold">Tap cards to take attendance</h1>
+                  <p className="muted-text mt-2 text-sm font-semibold">
+                    Credits: {itemLabels.join(', ') || 'No items configured'}
+                  </p>
+                </div>
+
+                {/* Big status display */}
+                {lastResult && (
+                  <div className={`lux-card rounded-2xl p-8 shadow-luxury transition-all ${lastResult.success ? '' : 'border-red-400/40'}`}>
+                    <p className={`text-4xl font-extrabold shimmer-text ${lastResult.success ? '' : 'text-red-400'}`}>
+                      {lastResult.success ? '✓' : '✗'}
+                    </p>
+                    <p className="mt-2 text-2xl font-extrabold">{lastResult.name}</p>
+                    <p className={`mt-1 text-sm font-semibold ${lastResult.success ? 'muted-text' : 'text-red-400'}`}>
+                      {lastResult.success ? 'Credited ✓' : 'Card not registered'}
+                    </p>
+                  </div>
+                )}
+
+                {!nfcActive ? (
+                  <button onClick={startNfc} className="lux-card focus-ring flex w-full items-center justify-center gap-3 rounded-2xl px-5 py-6 text-xl font-extrabold shadow-luxury">
+                    <Smartphone size={28} /> Start NFC Scanner
+                  </button>
+                ) : (
+                  <div className="lux-card nfc-listening flex w-full items-center justify-center gap-3 rounded-2xl px-5 py-6 text-xl font-extrabold shadow-luxury">
+                    <RefreshCw className="relative z-10 animate-spin" size={24} />
+                    <span className="relative z-10">Ready — tap a card</span>
+                  </div>
+                )}
+              </section>
+            </div>
+          </Shell>
+        );
+      }
+
+      // ── Club Cards Panel (admin) ───────────────────────────────────────────
+      function ClubCardsPanel({ appConfig }) {
+        const [clubs, setClubs] = useState([]);
+        const [configId, setConfigId] = useState(null);
+        const [saving, setSaving] = useState(false);
+        const toast = useToast();
+        const ndefRef = useRef(null);
+        const [listening, setListening] = useState(false);
+
+        useEffect(() => {
+          supabase.from('mivtza_config').select('id,club_cards').limit(1).maybeSingle().then(({ data }) => {
+            if (data) { setConfigId(data.id); try { if (data.club_cards) setClubs(JSON.parse(data.club_cards)); } catch {} }
+          });
+        }, []);
+
+        const persist = async (next) => {
+          setClubs(next); setSaving(true);
+          const payload = { club_cards: JSON.stringify(next) };
+          const { error } = configId
+            ? await supabase.from('mivtza_config').update(payload).eq('id', configId)
+            : await supabase.from('mivtza_config').upsert(payload);
+          setSaving(false);
+          if (error) toast.error(`Save failed: ${error.message}`);
+          else toast.success('Club portals saved ✓');
+        };
+
+        const addClub = () => persist([...clubs, { nfc_id: '', name: 'New Club', items: [] }]);
+        const removeClub = (idx) => persist(clubs.filter((_, i) => i !== idx));
+        const updateClub = (idx, field, value) => {
+          const next = clubs.map((c, i) => i === idx ? { ...c, [field]: value } : c);
+          setClubs(next); // local only; persist on blur
+        };
+
+        const scanForClub = async (idx) => {
+          if (!('NDEFReader' in window) || !window.isSecureContext) { toast.warning('NFC not available.'); return; }
+          try {
+            const ndef = new NDEFReader(); ndefRef.current = ndef;
+            ndef.onreading = (e) => {
+              setListening(false);
+              if (e.serialNumber) {
+                const next = clubs.map((c, i) => i === idx ? { ...c, nfc_id: e.serialNumber } : c);
+                persist(next);
+              }
+            };
+            await ndef.scan(); setListening(idx);
+          } catch { setListening(false); }
+        };
+
+        const allItems = [...(appConfig?.learning_items||[]), ...(appConfig?.hanhaga_items||[]), ...(appConfig?.teacher_items||[])];
+
+        return (
+          <div className="glass-panel rounded-lg p-5">
+            <ToastStack toasts={toast.toasts} remove={toast.remove} />
+            <h2 className="mb-1 flex items-center gap-2 text-xl font-extrabold"><Sparkles className="accent-text" /> Club / Event Portals</h2>
+            <p className="muted-text mb-4 text-xs font-semibold">Each club gets an operator NFC card. When tapped, opens a scanner so students tap through and get credited automatically.</p>
+            <button onClick={addClub} className="app-button focus-ring mb-4 inline-flex items-center gap-2 rounded px-4 py-2 text-sm font-extrabold"><Plus size={15}/> Add Club</button>
+            <div className="grid gap-4">
+              {clubs.map((club, idx) => (
+                <div key={idx} className="glass-panel rounded-lg p-4 grid gap-3">
+                  <div className="flex items-center gap-2">
+                    <input className="flex-1 bg-transparent font-extrabold outline-none text-base border-b line-border pb-1" placeholder="Club name (e.g. Chitas Club)" value={club.name} onChange={(e) => updateClub(idx,'name',e.target.value)} onBlur={() => persist([...clubs])} />
+                    <button onClick={() => removeClub(idx)} className="text-red-500"><Trash2 size={15}/></button>
+                  </div>
+                  <div className="flex gap-2 items-center">
+                    <input className="flex-1 bg-transparent text-xs font-mono outline-none border-b line-border pb-1 muted-text" placeholder="Operator card NFC ID" value={club.nfc_id} onChange={(e) => updateClub(idx,'nfc_id',e.target.value)} onBlur={() => persist([...clubs])} />
+                    <button onClick={() => scanForClub(idx)} disabled={listening === idx} className="lux-card focus-ring inline-flex items-center gap-1 rounded px-3 py-1.5 text-xs font-extrabold disabled:opacity-70">
+                      {listening === idx ? <RefreshCw size={12} className="animate-spin"/> : <Smartphone size={12}/>}
+                      {listening === idx ? 'Tap…' : 'Scan'}
+                    </button>
+                  </div>
+                  <div>
+                    <p className="muted-text text-xs font-extrabold uppercase tracking-widest mb-2">Items to credit when student taps:</p>
+                    <div className="grid gap-1 sm:grid-cols-2">
+                      {allItems.map((item) => {
+                        const checked = (club.items||[]).includes(item.db_key);
+                        return (
+                          <label key={item.db_key} className={`flex items-center gap-2 rounded px-3 py-2 cursor-pointer text-sm font-semibold ${checked ? 'accent-bg' : 'glass-panel'}`}>
+                            <input type="checkbox" checked={checked} onChange={(e) => {
+                              const items = e.target.checked
+                                ? [...(club.items||[]), item.db_key]
+                                : (club.items||[]).filter((k) => k !== item.db_key);
+                              const next = clubs.map((c,i) => i===idx ? {...c, items} : c);
+                              persist(next);
+                            }} />
+                            {item.label}{item.points ? ` · ${item.points}pts` : ''}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      }
+
       function App() {
         const [camper, setCamper] = useState(null);
         const [adminMode, setAdminMode] = useState(false);
-        const [teacherMode, setTeacherMode] = useState(false);
+        const [teacherInfo, setTeacherInfo] = useState(null);  // null | {name, bunk}
+        const [clubCard, setClubCard] = useState(null);         // null | club config object
         const isAdmin = adminMode || window.location.pathname.endsWith('/admin') || window.location.search.includes('admin');
 
-        const goAdmin = () => { sessionStorage.setItem('mivtza_admin_unlocked', '1'); setAdminMode(true); };
-        const goTeacher = () => setTeacherMode(true);
+        const goAdmin   = () => { sessionStorage.setItem('mivtza_admin_unlocked', '1'); setAdminMode(true); };
+        const goTeacher = (name, bunk) => setTeacherInfo({ name, bunk });
+        const goClub    = (club) => setClubCard(club);
 
         if (isAdmin) return <AdminGate><AdminDashboard /></AdminGate>;
-        if (teacherMode) return <ErrorBoundary><TeacherPortal onLogout={() => setTeacherMode(false)} /></ErrorBoundary>;
+        if (teacherInfo) return <ErrorBoundary><TeacherPortal onLogout={() => setTeacherInfo(null)} teacherName={teacherInfo.name} bunk={teacherInfo.bunk} /></ErrorBoundary>;
+        if (clubCard)    return <ErrorBoundary><ClubPortal onLogout={() => setClubCard(null)} club={clubCard} /></ErrorBoundary>;
         if (camper) return <ErrorBoundary><CamperDashboard camper={camper} onLogout={() => setCamper(null)} /></ErrorBoundary>;
-        return <LoginScreen onCamper={setCamper} onAdmin={goAdmin} onTeacher={goTeacher} />;
+        return <LoginScreen onCamper={setCamper} onAdmin={goAdmin} onTeacher={goTeacher} onClub={goClub} />;
       }
 
       createRoot(document.getElementById('root')).render(<App />);
