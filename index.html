@@ -408,17 +408,6 @@
           .replace(/[^a-z0-9]/g, '');
       }
 
-      // Lightweight password hashing via the browser's built-in SubtleCrypto.
-      // This is NOT bank-grade security — there's no salt/pepper and the
-      // "database" is a public anon-key Supabase table — but it means a
-      // stray SELECT * on the teachers table doesn't hand out raw passwords
-      // in plain text, which is the main thing worth guarding against here.
-      async function hashPassword(password) {
-        const enc = new TextEncoder().encode(password);
-        const buf = await crypto.subtle.digest('SHA-256', enc);
-        return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
-      }
-
 
 
       function IconButton({ icon: Icon, label, className = '', ...props }) {
@@ -562,16 +551,25 @@
           setBusy(true);
           setError('');
           try {
-            const hash = await hashPassword(password);
-            const { data, error: qErr } = await supabase
-              .from('teachers')
-              .select('id,username,name,bunk,password_hash')
-              .eq('username', username.trim().toLowerCase())
+            const email = teacherEmail(username);
+            const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+            if (authError) {
+              setBusy(false);
+              setError(authError.message.includes('Invalid') ? 'Incorrect username or password.' : authError.message);
+              return;
+            }
+            const { data: profile, error: profileError } = await supabase
+              .from('teacher_profiles')
+              .select('name,bunk')
+              .eq('user_id', data.user.id)
               .maybeSingle();
             setBusy(false);
-            if (qErr) { setError(`Connection error: ${qErr.message}`); return; }
-            if (!data || data.password_hash !== hash) { setError('Incorrect username or password.'); return; }
-            onSuccess({ name: data.name, bunk: data.bunk });
+            if (profileError || !profile) {
+              await supabase.auth.signOut();
+              setError('Account found but no profile is set up — ask an admin to check your account.');
+              return;
+            }
+            onSuccess({ name: profile.name, bunk: profile.bunk });
           } catch (err) {
             setBusy(false);
             setError(`Error: ${err.message}`);
@@ -1955,7 +1953,19 @@
 
       // ── Teacher Cards Panel (admin section) ──────────────────────────────
       // Helper — handle both old string format and new object format
-      // ── Teacher Accounts Panel (username + password, no NFC card needed) ──
+      // ── Teacher email helper — Supabase Auth needs an email, so we build a
+      // fake internal one from the username. Requires "Confirm email" to be
+      // turned OFF in Supabase → Authentication → Providers → Email, since
+      // these addresses can't receive real confirmation mail.
+      function teacherEmail(username) {
+        return `${username.trim().toLowerCase().replace(/\s+/g, '')}@mivtza.local`;
+      }
+
+      // ── Teacher Accounts Panel — real Supabase Auth, admin-safe ────────────
+      // Uses only the public anon key (no service role key in this file).
+      // Creating an account briefly signs the browser in as that new teacher
+      // via supabase.auth.signUp, then immediately signs back out so the
+      // admin's own session isn't affected.
       function TeacherAccountsPanel() {
         const [teachers, setTeachers] = useState([]);
         const [loading, setLoading] = useState(true);
@@ -1968,7 +1978,7 @@
 
         const load = () => {
           setLoading(true);
-          supabase.from('teachers').select('id,username,name,bunk').order('name').then(({ data }) => {
+          supabase.from('teacher_profiles').select('user_id,username,name,bunk').order('name').then(({ data }) => {
             setTeachers(data || []);
             setLoading(false);
           });
@@ -1979,44 +1989,50 @@
           if (!newUsername.trim() || !newPassword || !newName.trim()) {
             toast.error('Username, password, and name are all required.'); return;
           }
+          if (newPassword.length < 6) { toast.error('Password must be at least 6 characters.'); return; }
           setSaving(true);
-          const hash = await hashPassword(newPassword);
-          const { error } = await supabase.from('teachers').insert({
-            username: newUsername.trim().toLowerCase(),
-            password_hash: hash,
-            name: newName.trim(),
-            bunk: newBunk.trim() || null,
-          });
-          setSaving(false);
-          if (error) toast.error(`Failed: ${error.message}`);
-          else {
+          try {
+            const email = teacherEmail(newUsername);
+            const { data, error: signUpError } = await supabase.auth.signUp({ email, password: newPassword });
+            if (signUpError) { toast.error(`Failed: ${signUpError.message}`); setSaving(false); return; }
+            if (!data.user) { toast.error('Account creation did not return a user — check "Confirm email" is OFF in Supabase Auth settings.'); setSaving(false); return; }
+
+            const { error: profileError } = await supabase.from('teacher_profiles').insert({
+              user_id: data.user.id,
+              username: newUsername.trim().toLowerCase(),
+              name: newName.trim(),
+              bunk: newBunk.trim() || null,
+            });
+
+            // Always sign back out so the admin's browser isn't left logged
+            // in as the newly-created teacher.
+            await supabase.auth.signOut();
+
+            if (profileError) { toast.error(`Profile save failed: ${profileError.message}`); setSaving(false); return; }
+
             toast.success(`${newName} added ✓`);
             setNewUsername(''); setNewPassword(''); setNewName(''); setNewBunk('');
+            setSaving(false);
             load();
+          } catch (err) {
+            await supabase.auth.signOut();
+            toast.error(`Error: ${err.message}`);
+            setSaving(false);
           }
         };
 
         const removeTeacher = async (t) => {
-          if (!window.confirm(`Remove ${t.name}'s account?`)) return;
-          const { error } = await supabase.from('teachers').delete().eq('id', t.id);
+          if (!window.confirm(`Remove ${t.name}'s account? They will no longer be able to log in. (To reset a forgotten password, remove and re-add with a new one.)`)) return;
+          const { error } = await supabase.from('teacher_profiles').delete().eq('user_id', t.user_id);
           if (error) toast.error(`Failed: ${error.message}`);
-          else { toast.success('Removed ✓'); load(); }
-        };
-
-        const resetPassword = async (t) => {
-          const newPass = window.prompt(`New password for ${t.name}:`);
-          if (!newPass) return;
-          const hash = await hashPassword(newPass);
-          const { error } = await supabase.from('teachers').update({ password_hash: hash }).eq('id', t.id);
-          if (error) toast.error(`Failed: ${error.message}`);
-          else toast.success('Password updated ✓');
+          else { toast.success('Removed — they can no longer log in ✓'); load(); }
         };
 
         return (
           <div className="glass-panel rounded-lg p-5">
             <ToastStack toasts={toast.toasts} remove={toast.remove} />
             <h2 className="mb-1 flex items-center gap-2 text-xl font-extrabold"><Users className="accent-text" /> Teacher / Counselor Accounts</h2>
-            <p className="muted-text mb-4 text-xs font-semibold">Each teacher gets a username + password. Assign a bunk so their portal only shows their students — leave blank to see everyone.</p>
+            <p className="muted-text mb-4 text-xs font-semibold">Real Supabase Auth accounts. Assign a bunk so their portal only shows their students — leave blank to see everyone. To change a password, remove the account and re-add with a new one.</p>
 
             {/* New account form */}
             <div className="grid gap-2 mb-4">
@@ -2026,7 +2042,7 @@
               </div>
               <div className="flex gap-2">
                 <input className="glass-panel flex-1 rounded px-3 py-2 bg-transparent text-sm font-semibold outline-none" placeholder="Username" value={newUsername} onChange={(e) => setNewUsername(e.target.value)} />
-                <input className="glass-panel flex-1 rounded px-3 py-2 bg-transparent text-sm font-semibold outline-none" type="text" placeholder="Password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+                <input className="glass-panel flex-1 rounded px-3 py-2 bg-transparent text-sm font-semibold outline-none" type="text" placeholder="Password (min 6 chars)" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
                 <button onClick={addTeacher} disabled={saving} className="app-button focus-ring rounded px-3 py-2 font-extrabold text-sm disabled:opacity-70">
                   {saving ? <RefreshCw size={16} className="animate-spin" /> : <Plus size={16} />}
                 </button>
@@ -2038,21 +2054,19 @@
               {loading && <p className="muted-text text-sm font-semibold">Loading…</p>}
               {!loading && teachers.length === 0 && <p className="muted-text text-sm font-semibold">No teacher accounts yet.</p>}
               {teachers.map((t) => (
-                <div key={t.id} className="glass-panel flex items-center justify-between rounded-lg p-3">
+                <div key={t.user_id} className="glass-panel flex items-center justify-between rounded-lg p-3">
                   <div>
                     <p className="font-bold text-sm">{t.name}</p>
                     <p className="muted-text text-xs font-semibold">@{t.username}{t.bunk ? ` · ${t.bunk}` : ' · all bunks'}</p>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => resetPassword(t)} title="Reset password" className="focus-ring inline-flex h-8 w-8 items-center justify-center rounded border line-border hover:scale-105"><KeyRound size={14} /></button>
-                    <button onClick={() => removeTeacher(t)} title="Remove" className="focus-ring inline-flex h-8 w-8 items-center justify-center rounded border border-red-400/40 text-red-500 hover:scale-105"><Trash2 size={14} /></button>
-                  </div>
+                  <button onClick={() => removeTeacher(t)} title="Remove account" className="focus-ring inline-flex h-8 w-8 items-center justify-center rounded border border-red-400/40 text-red-500 hover:scale-105"><Trash2 size={14} /></button>
                 </div>
               ))}
             </div>
           </div>
         );
       }
+
 
 
       // ── Teacher Portal ────────────────────────────────────────────────────
@@ -2428,9 +2442,10 @@
         const goAdmin   = () => { sessionStorage.setItem('mivtza_admin_unlocked', '1'); setAdminMode(true); };
         const goTeacher = (name, bunk) => setTeacherInfo({ name, bunk });
         const goClub    = (club) => setClubCard(club);
+        const teacherLogout = () => { supabase.auth.signOut(); setTeacherInfo(null); };
 
         if (isAdmin) return <AdminGate><AdminDashboard /></AdminGate>;
-        if (teacherInfo) return <ErrorBoundary><TeacherPortal onLogout={() => setTeacherInfo(null)} teacherName={teacherInfo.name} bunk={teacherInfo.bunk} /></ErrorBoundary>;
+        if (teacherInfo) return <ErrorBoundary><TeacherPortal onLogout={teacherLogout} teacherName={teacherInfo.name} bunk={teacherInfo.bunk} /></ErrorBoundary>;
         if (clubCard)    return <ErrorBoundary><ClubPortal onLogout={() => setClubCard(null)} club={clubCard} /></ErrorBoundary>;
         if (camper) return <ErrorBoundary><CamperDashboard camper={camper} onLogout={() => setCamper(null)} /></ErrorBoundary>;
         return <LoginScreen onCamper={setCamper} onAdmin={goAdmin} onTeacher={goTeacher} onClub={goClub} />;
