@@ -544,9 +544,12 @@
       // No accounts to create in-app. To let a teacher in, add their Google
       // email to the teacher_profiles table directly in Supabase's Table
       // Editor: email, name, bunk. That's it — no signup flow needed.
-      function TeacherLoginModal({ onClose }) {
+      function TeacherLoginModal({ onClose, onAuthed }) {
         const [busy, setBusy] = useState(false);
         const [error, setError] = useState('');
+        const [email, setEmail] = useState('');
+        const [password, setPassword] = useState('');
+        const [isNewAccount, setIsNewAccount] = useState(false);
 
         const signInWithGoogle = async () => {
           setBusy(true);
@@ -560,27 +563,60 @@
           // App's session-check effect picks up the logged-in user from there.
         };
 
+        const submitPassword = async () => {
+          if (!email.trim() || !password) { setError('Enter email and password.'); return; }
+          if (isNewAccount && password.length < 6) { setError('Password must be at least 6 characters.'); return; }
+          setBusy(true);
+          setError('');
+          const authFn = isNewAccount ? supabase.auth.signUp : supabase.auth.signInWithPassword;
+          const { error: authError } = await authFn({ email: email.trim(), password });
+          if (authError) { setBusy(false); setError(authError.message); return; }
+          const found = await onAuthed();
+          setBusy(false);
+          if (found) onClose();
+          else setError('Signed in, but this email is not on the teacher list. Ask an admin to add you in Supabase.');
+        };
+
         return (
           <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 backdrop-blur-md p-6">
-            <div className="lux-card w-full max-w-sm rounded-2xl p-7 shadow-luxury text-center">
+            <div className="lux-card w-full max-w-sm rounded-2xl p-7 shadow-luxury">
               <div className="mb-5 flex items-center justify-between">
                 <h2 className="text-xl font-extrabold">Teacher / Counselor Login</h2>
                 <button onClick={onClose} className="focus-ring rounded p-1"><X size={20} /></button>
               </div>
-              <p className="muted-text mb-5 text-sm font-semibold">Sign in with the Google account your admin registered for you.</p>
-              {error && <p className="mb-4 rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-500">{error}</p>}
+
               <button onClick={signInWithGoogle} disabled={busy} className="app-button focus-ring flex w-full items-center justify-center gap-3 rounded-lg px-5 py-4 font-extrabold disabled:opacity-70">
-                {busy ? <RefreshCw size={20} className="animate-spin" /> : (
-                  <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C34.5 5.5 29.6 3.5 24 3.5 12.7 3.5 3.5 12.7 3.5 24S12.7 44.5 24 44.5 44.5 35.3 44.5 24c0-1.2-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.6 15.6 18.9 12.5 24 12.5c3.1 0 5.8 1.1 8 3l6-6C34.5 5.5 29.6 3.5 24 3.5c-7.6 0-14.2 4.3-17.7 10.6l0 .6z"/><path fill="#4CAF50" d="M24 44.5c5.5 0 10.4-1.9 14.2-5.1l-6.6-5.5C29.5 35.5 26.9 36.5 24 36.5c-5.3 0-9.7-3.3-11.3-8l-6.6 5.1C9.7 40 16.3 44.5 24 44.5z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.3-4.2 5.8l6.6 5.5C41.6 36 44.5 30.5 44.5 24c0-1.2-.1-2.4-.4-3.5z"/></svg>
-                )}
-                {busy ? 'Redirecting…' : 'Sign in with Google'}
+                <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C34.5 5.5 29.6 3.5 24 3.5 12.7 3.5 3.5 12.7 3.5 24S12.7 44.5 24 44.5 44.5 35.3 44.5 24c0-1.2-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.6 15.6 18.9 12.5 24 12.5c3.1 0 5.8 1.1 8 3l6-6C34.5 5.5 29.6 3.5 24 3.5c-7.6 0-14.2 4.3-17.7 10.6l0 .6z"/><path fill="#4CAF50" d="M24 44.5c5.5 0 10.4-1.9 14.2-5.1l-6.6-5.5C29.5 35.5 26.9 36.5 24 36.5c-5.3 0-9.7-3.3-11.3-8l-6.6 5.1C9.7 40 16.3 44.5 24 44.5z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.3-4.2 5.8l6.6 5.5C41.6 36 44.5 30.5 44.5 24c0-1.2-.1-2.4-.4-3.5z"/></svg>
+                Sign in with Google
               </button>
+
+              <div className="my-4 flex items-center gap-3">
+                <div className="h-px flex-1 bg-white/10" />
+                <span className="muted-text text-xs font-extrabold">OR</span>
+                <div className="h-px flex-1 bg-white/10" />
+              </div>
+
+              <div className="grid gap-3">
+                <TextInput icon={Users} type="email" placeholder="Email" value={email}
+                  onChange={(e) => setEmail(e.target.value)} />
+                <TextInput icon={Lock} type="password" placeholder="Password" value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && submitPassword()} />
+                {error && <p className="rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-500">{error}</p>}
+                <button onClick={submitPassword} disabled={busy} className="glass-panel focus-ring flex items-center justify-center gap-2 rounded-lg px-5 py-3 font-extrabold disabled:opacity-70">
+                  {busy ? <RefreshCw size={16} className="animate-spin" /> : <BadgeCheck size={16} />}
+                  {busy ? 'Please wait…' : (isNewAccount ? 'Create Account & Sign In' : 'Sign In')}
+                </button>
+                <button onClick={() => { setIsNewAccount((v) => !v); setError(''); }} className="text-xs font-semibold muted-text underline">
+                  {isNewAccount ? 'Already have a password? Sign in' : 'First time? Create a password'}
+                </button>
+              </div>
             </div>
           </div>
         );
       }
 
-      function LoginScreen({ onCamper, onAdmin, onClub }) {
+      function LoginScreen({ onCamper, onAdmin, onClub, onTeacherAuthed }) {
         const [scan, setScan] = useState('');
         const [busy, setBusy] = useState(false);
         const [cardNotFound, setCardNotFound] = useState(false);
@@ -823,7 +859,7 @@
                 </div>
 
                 {showTeacherLogin && (
-                  <TeacherLoginModal onClose={() => setShowTeacherLogin(false)} />
+                  <TeacherLoginModal onClose={() => setShowTeacherLogin(false)} onAuthed={onTeacherAuthed} />
                 )}
               </section>
             </div>
@@ -1030,25 +1066,88 @@
         const adminCode = getAdminCode();
         const [code, setCode] = useState('');
         const [unlocked, setUnlocked] = useState(!adminCode || sessionStorage.getItem('mivtza_admin_unlocked') === '1');
+        const [email, setEmail] = useState('');
+        const [password, setPassword] = useState('');
+        const [isNewAccount, setIsNewAccount] = useState(false);
+        const [busy, setBusy] = useState(false);
+        const [error, setError] = useState('');
+
+        // Once signed in as an authenticated Supabase user, re-check on every
+        // mount whether that email is on the admin allowlist — lets a
+        // returning admin skip straight in without re-entering anything.
+        useEffect(() => {
+          if (unlocked) return;
+          supabase.auth.getSession().then(async ({ data: { session } }) => {
+            if (!session?.user?.email) return;
+            const { data } = await supabase.from('admin_profiles').select('email').ilike('email', session.user.email).maybeSingle();
+            if (data) { sessionStorage.setItem('mivtza_admin_unlocked', '1'); setUnlocked(true); }
+          });
+        }, []);
+
         if (unlocked) return children;
+
+        const unlockWithPasscode = () => {
+          if (code === adminCode) {
+            sessionStorage.setItem('mivtza_admin_unlocked', '1');
+            setUnlocked(true);
+          } else {
+            setError('Incorrect passcode.');
+          }
+        };
+
+        const submitPassword = async () => {
+          if (!email.trim() || !password) { setError('Enter email and password.'); return; }
+          if (isNewAccount && password.length < 6) { setError('Password must be at least 6 characters.'); return; }
+          setBusy(true);
+          setError('');
+          const authFn = isNewAccount ? supabase.auth.signUp : supabase.auth.signInWithPassword;
+          const { error: authError } = await authFn({ email: email.trim(), password });
+          if (authError) { setBusy(false); setError(authError.message); return; }
+          const { data } = await supabase.from('admin_profiles').select('email').ilike('email', email.trim()).maybeSingle();
+          setBusy(false);
+          if (data) {
+            sessionStorage.setItem('mivtza_admin_unlocked', '1');
+            setUnlocked(true);
+          } else {
+            await supabase.auth.signOut();
+            setError('Signed in, but this email is not on the admin list. Add it to admin_profiles in Supabase.');
+          }
+        };
+
         return (
           <Shell admin status="Platinum">
             <div className="mx-auto grid min-h-[60vh] max-w-md place-items-center">
               <div className="glass-panel w-full rounded-lg p-5 shadow-luxury">
                 <Lock className="accent-text mb-3" />
                 <h1 className="text-2xl font-extrabold">Admin Access</h1>
-                <TextInput className="mt-5" icon={KeyRound} type="password" placeholder="Passcode" value={code} onChange={(event) => setCode(event.target.value)} />
-                <button
-                  className="app-button focus-ring mt-4 w-full rounded px-5 py-3 font-extrabold"
-                  onClick={() => {
-                    if (code === adminCode) {
-                      sessionStorage.setItem('mivtza_admin_unlocked', '1');
-                      setUnlocked(true);
-                    }
-                  }}
-                >
-                  Unlock
+
+                <TextInput className="mt-5" icon={KeyRound} type="password" placeholder="Passcode" value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && unlockWithPasscode()} />
+                <button className="app-button focus-ring mt-3 w-full rounded px-5 py-3 font-extrabold" onClick={unlockWithPasscode}>
+                  Unlock with Passcode
                 </button>
+
+                <div className="my-4 flex items-center gap-3">
+                  <div className="h-px flex-1 bg-white/10" />
+                  <span className="muted-text text-xs font-extrabold">OR</span>
+                  <div className="h-px flex-1 bg-white/10" />
+                </div>
+
+                <div className="grid gap-3">
+                  <TextInput icon={Users} type="email" placeholder="Admin email" value={email} onChange={(e) => setEmail(e.target.value)} />
+                  <TextInput icon={Lock} type="password" placeholder="Password" value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && submitPassword()} />
+                  {error && <p className="rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-500">{error}</p>}
+                  <button onClick={submitPassword} disabled={busy} className="glass-panel focus-ring flex items-center justify-center gap-2 rounded px-5 py-3 font-extrabold disabled:opacity-70">
+                    {busy ? <RefreshCw size={16} className="animate-spin" /> : <BadgeCheck size={16} />}
+                    {busy ? 'Please wait…' : (isNewAccount ? 'Create Account & Sign In' : 'Sign In with Email')}
+                  </button>
+                  <button onClick={() => { setIsNewAccount((v) => !v); setError(''); }} className="text-xs font-semibold muted-text underline">
+                    {isNewAccount ? 'Already have a password? Sign in' : 'First time? Create a password'}
+                  </button>
+                </div>
               </div>
             </div>
           </Shell>
@@ -1214,13 +1313,23 @@
           if (!preview) return;
           setApplying(true);
           const field = mode === 'bunks' ? 'bunk' : 'class';
-          let ok = 0, fail = 0;
+          let ok = 0, fail = 0, blocked = 0;
           for (const m of preview.matched) {
-            const { error } = await supabase.from(CAMPER_WRITE_TABLE).update({ [field]: m.group }).eq('id', m.camper.id);
-            if (error) fail++; else ok++;
+            // .select() forces Supabase to return the updated row(s) — if
+            // Row Level Security is silently blocking the write, this comes
+            // back as an empty array with NO error, which is otherwise
+            // invisible. Checking the returned row count catches that.
+            const { data, error } = await supabase.from(CAMPER_WRITE_TABLE).update({ [field]: m.group }).eq('id', m.camper.id).select();
+            if (error) fail++;
+            else if (!data || data.length === 0) blocked++;
+            else ok++;
           }
           setApplying(false);
-          toast.success(`${ok} campers updated${fail ? `, ${fail} failed` : ''} ✓`);
+          if (blocked > 0) {
+            toast.error(`${blocked} update(s) were silently blocked — this means Row Level Security on "${CAMPER_WRITE_TABLE}" doesn't allow writes. Run the RLS fix SQL in Supabase.`);
+          } else {
+            toast.success(`${ok} campers updated${fail ? `, ${fail} failed` : ''} ✓`);
+          }
           setPreview(null);
           setRaw('');
           onDone && onDone();
@@ -1426,11 +1535,13 @@
         // ── Inline edit save ────────────────────────────────────────────────
         const saveEdit = async () => {
           if (!editRow) return;
-          const { error } = await supabase
+          const { data, error } = await supabase
             .from(CAMPER_WRITE_TABLE)
-            .update({ name: editRow.name, nfc_id: editRow.nfc_id, bunk: editRow.bunk || null })
-            .eq('id', editRow.id);
+            .update({ name: editRow.name, nfc_id: editRow.nfc_id, bunk: editRow.bunk || null, class: editRow.class || null })
+            .eq('id', editRow.id)
+            .select();
           if (error) toast.error(`Save failed: ${error.message}`);
+          else if (!data || data.length === 0) toast.error(`Update was silently blocked — Row Level Security on "${CAMPER_WRITE_TABLE}" doesn't allow writes. Run the RLS fix SQL in Supabase.`);
           else { setEditRow(null); toast.success('Camper updated ✓'); load(); }
         };
 
@@ -1554,7 +1665,7 @@
                   <table className="w-full min-w-[900px] text-left text-sm">
                     <thead className="accent-bg">
                       <tr>
-                        {['Name', 'NFC ID', 'Bunk', 'Card Status', 'Weekly Pts', 'Lifetime Pts', 'Event Status', ''].map((head) => (
+                        {['Name', 'NFC ID', 'Bunk', 'Class', 'Card Status', 'Weekly Pts', 'Lifetime Pts', 'Event Status', ''].map((head) => (
                           <th key={head} className="px-4 py-3 font-extrabold">{head}</th>
                         ))}
                       </tr>
@@ -1578,6 +1689,11 @@
                               {isEditing
                                 ? <input className="w-28 rounded border line-border bg-transparent px-2 py-1 text-xs font-semibold" placeholder="Bunk" value={editRow.bunk||''} onChange={(e) => setEditRow({ ...editRow, bunk: e.target.value })} />
                                 : <span className="text-xs font-semibold">{camper.bunk || '—'}</span>}
+                            </td>
+                            <td className="px-4 py-2">
+                              {isEditing
+                                ? <input className="w-28 rounded border line-border bg-transparent px-2 py-1 text-xs font-semibold" placeholder="Class" value={editRow.class||''} onChange={(e) => setEditRow({ ...editRow, class: e.target.value })} />
+                                : <span className="text-xs font-semibold">{camper.class || '—'}</span>}
                             </td>
                             <td className="px-4 py-2">
                               {displayValue(camper.card_status)}
@@ -2367,30 +2483,36 @@
       function App() {
         const [camper, setCamper] = useState(null);
         const [adminMode, setAdminMode] = useState(false);
-        const [teacherInfo, setTeacherInfo] = useState(null);  // null | {name, bunk} | 'checking' | 'denied'
+        const [teacherInfo, setTeacherInfo] = useState(null);  // null | {name, bunk}
         const [clubCard, setClubCard] = useState(null);         // null | club config object
         const isAdmin = adminMode || window.location.pathname.endsWith('/admin') || window.location.search.includes('admin');
 
-        // After a Google OAuth redirect, Supabase leaves an active session in
-        // this browser. Check for it once on load, and match the signed-in
-        // email against the teacher_profiles allowlist.
-        useEffect(() => {
-          supabase.auth.getSession().then(async ({ data: { session } }) => {
-            if (!session?.user?.email) return;
-            const { data: profile } = await supabase
-              .from('teacher_profiles')
-              .select('name,bunk')
-              .ilike('email', session.user.email)
-              .maybeSingle();
-            if (profile) {
-              setTeacherInfo({ name: profile.name, bunk: profile.bunk });
-            } else {
-              // Signed in with Google but not on the allowlist — bounce them
-              // back out so they don't get stuck in limbo.
-              await supabase.auth.signOut();
-            }
-          });
-        }, []);
+        // Checks for an active Supabase Auth session (set either by a Google
+        // OAuth redirect, or right after an email/password sign-in) and
+        // matches the signed-in email against the teacher_profiles allowlist.
+        // Returns true if a matching teacher was found, false otherwise —
+        // callers use this to show an error if someone authenticates with an
+        // email that isn't on the list.
+        const checkTeacherSession = async () => {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session?.user?.email) return false;
+          const { data: profile } = await supabase
+            .from('teacher_profiles')
+            .select('name,bunk')
+            .ilike('email', session.user.email)
+            .maybeSingle();
+          if (profile) {
+            setTeacherInfo({ name: profile.name, bunk: profile.bunk });
+            return true;
+          }
+          // Signed in but not on the allowlist — bounce them back out so
+          // they don't get stuck in limbo.
+          await supabase.auth.signOut();
+          return false;
+        };
+
+        // Run once on load to catch a Google OAuth redirect completing.
+        useEffect(() => { checkTeacherSession(); }, []);
 
         const goAdmin   = () => { sessionStorage.setItem('mivtza_admin_unlocked', '1'); setAdminMode(true); };
         const goClub    = (club) => setClubCard(club);
@@ -2400,7 +2522,7 @@
         if (teacherInfo) return <ErrorBoundary><TeacherPortal onLogout={teacherLogout} teacherName={teacherInfo.name} bunk={teacherInfo.bunk} /></ErrorBoundary>;
         if (clubCard)    return <ErrorBoundary><ClubPortal onLogout={() => setClubCard(null)} club={clubCard} /></ErrorBoundary>;
         if (camper) return <ErrorBoundary><CamperDashboard camper={camper} onLogout={() => setCamper(null)} /></ErrorBoundary>;
-        return <LoginScreen onCamper={setCamper} onAdmin={goAdmin} onClub={goClub} />;
+        return <LoginScreen onCamper={setCamper} onAdmin={goAdmin} onClub={goClub} onTeacherAuthed={checkTeacherSession} />;
       }
 
       createRoot(document.getElementById('root')).render(<App />);
