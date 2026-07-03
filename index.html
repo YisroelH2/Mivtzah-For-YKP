@@ -1100,6 +1100,163 @@
         );
       }
 
+      // ── Bulk Import (bunks + classes from Google Sheets paste) ────────────
+      // Names are matched word-order-independent so "Avi Adelist" (bunks sheet)
+      // and "Adelist Avi" (classes sheet) both match the same camper.
+      function nameKey(name) {
+        return String(name || '')
+          .toLowerCase()
+          .replace(/[^a-z\s]/g, '')
+          .split(/\s+/)
+          .filter(Boolean)
+          .sort()
+          .join(' ');
+      }
+
+      function BulkImportPanel({ campers, onDone }) {
+        const [mode, setMode] = useState('bunks');
+        const [raw, setRaw] = useState('');
+        const [preview, setPreview] = useState(null);
+        const [applying, setApplying] = useState(false);
+        const toast = useToast();
+
+        const parse = () => {
+          const lines = raw.replace(/\r/g, '').split('\n').filter((l) => l.trim() !== '' || l.includes('\t'));
+          if (lines.length === 0) return [];
+          const grid = lines.map((l) => l.split('\t'));
+          const results = [];
+
+          if (mode === 'bunks') {
+            const cols = Math.max(...grid.map((r) => r.length));
+            for (let c = 0; c < cols; c += 2) {
+              const kevutza = (grid[0]?.[c] || '').trim();
+              const bunkhouse = (grid[1]?.[c] || '').trim();
+              if (!kevutza) continue;
+              const group = bunkhouse ? `${kevutza} (${bunkhouse})` : kevutza;
+              for (let r = 3; r < grid.length; r++) {
+                const first = (grid[r]?.[c] || '').trim();
+                const last = (grid[r]?.[c + 1] || '').trim();
+                const fullName = `${first} ${last}`.trim();
+                if (fullName) results.push({ fullName, group });
+              }
+            }
+          } else {
+            const cols = Math.max(...grid.map((r) => r.length));
+            for (let c = 0; c < cols; c++) {
+              const rabbi = (grid[0]?.[c] || '').trim();
+              if (!rabbi) continue;
+              for (let r = 1; r < grid.length; r++) {
+                const fullName = (grid[r]?.[c] || '').trim();
+                if (fullName && !/^\d+$/.test(fullName)) results.push({ fullName, group: rabbi });
+              }
+            }
+          }
+          return results;
+        };
+
+        const buildPreview = () => {
+          const rows = parse();
+          if (rows.length === 0) { toast.error('Nothing parsed — paste the sheet including headers.'); return; }
+          const lookup = {};
+          campers.forEach((c) => { lookup[nameKey(c.name)] = c; });
+          const matched = [], unmatched = [];
+          rows.forEach((row) => {
+            const hit = lookup[nameKey(row.fullName)];
+            if (hit) matched.push({ camper: hit, group: row.group, sheetName: row.fullName });
+            else unmatched.push(row);
+          });
+          setPreview({ matched, unmatched });
+        };
+
+        const apply = async () => {
+          if (!preview) return;
+          setApplying(true);
+          const field = mode === 'bunks' ? 'bunk' : 'class';
+          let ok = 0, fail = 0;
+          for (const m of preview.matched) {
+            const { error } = await supabase.from(CAMPER_WRITE_TABLE).update({ [field]: m.group }).eq('id', m.camper.id);
+            if (error) fail++; else ok++;
+          }
+          setApplying(false);
+          toast.success(`${ok} campers updated${fail ? `, ${fail} failed` : ''} ✓`);
+          setPreview(null);
+          setRaw('');
+          onDone && onDone();
+        };
+
+        return (
+          <div className="glass-panel rounded-lg p-5">
+            <ToastStack toasts={toast.toasts} remove={toast.remove} />
+            <h2 className="mb-1 flex items-center gap-2 text-xl font-extrabold"><Users className="accent-text" /> Bulk Import Bunks & Classes</h2>
+            <p className="muted-text mb-4 text-xs font-semibold">Copy your Google Sheet (including the header rows) and paste below. Names match your existing campers automatically — even if first/last name order differs.</p>
+
+            <div className="mb-3 flex gap-2">
+              <button onClick={() => { setMode('bunks'); setPreview(null); }} className={`focus-ring rounded px-4 py-2 text-sm font-extrabold ${mode==='bunks' ? 'app-button' : 'glass-panel'}`}>Bunks Sheet</button>
+              <button onClick={() => { setMode('classes'); setPreview(null); }} className={`focus-ring rounded px-4 py-2 text-sm font-extrabold ${mode==='classes' ? 'app-button' : 'glass-panel'}`}>Classes Sheet</button>
+            </div>
+
+            <p className="muted-text mb-2 text-xs font-semibold">
+              {mode === 'bunks'
+                ? 'Bunks: Kevutza name in row 1, Bunkhouse in row 2, counselor in row 3, then First name | Last name columns.'
+                : 'Classes: Rabbi name in row 1, then "Lastname Firstname" down each column.'}
+            </p>
+
+            <textarea
+              className="glass-panel focus-ring w-full rounded-lg p-3 text-xs font-mono outline-none"
+              rows={6}
+              placeholder="Paste your sheet here…"
+              value={raw}
+              onChange={(e) => { setRaw(e.target.value); setPreview(null); }}
+            />
+
+            <div className="mt-3 flex gap-2">
+              <button onClick={buildPreview} className="app-button focus-ring rounded px-5 py-2 font-extrabold">Preview Matches</button>
+              {preview && <button onClick={() => { setPreview(null); setRaw(''); }} className="glass-panel focus-ring rounded px-4 py-2 font-bold">Clear</button>}
+            </div>
+
+            {preview && (
+              <div className="mt-4 grid gap-3">
+                <div className="flex gap-4 text-sm font-extrabold">
+                  <span className="text-green-500">✓ {preview.matched.length} matched</span>
+                  {preview.unmatched.length > 0 && <span className="text-amber-500">⚠ {preview.unmatched.length} unmatched</span>}
+                </div>
+
+                {preview.matched.length > 0 && (
+                  <div className="glass-panel rounded-lg p-3 max-h-48 overflow-y-auto">
+                    <p className="muted-text mb-2 text-xs font-extrabold uppercase">Will assign:</p>
+                    {preview.matched.slice(0, 200).map((m, i) => (
+                      <div key={i} className="flex justify-between text-xs font-semibold py-0.5">
+                        <span>{m.camper.name}</span>
+                        <span className="accent-text">{m.group}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {preview.unmatched.length > 0 && (
+                  <div className="rounded-lg border border-amber-400/40 bg-amber-500/10 p-3 max-h-40 overflow-y-auto">
+                    <p className="mb-2 text-xs font-extrabold uppercase text-amber-600">Not found in roster (check spelling or register first):</p>
+                    {preview.unmatched.map((u, i) => (
+                      <div key={i} className="flex justify-between text-xs font-semibold py-0.5 text-amber-700">
+                        <span>{u.fullName}</span>
+                        <span>{u.group}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {preview.matched.length > 0 && (
+                  <button onClick={apply} disabled={applying} className="app-button focus-ring inline-flex items-center justify-center gap-2 rounded px-5 py-3 font-extrabold disabled:opacity-60">
+                    {applying ? <RefreshCw size={18} className="animate-spin" /> : <Save size={18} />}
+                    Apply {preview.matched.length} {mode === 'bunks' ? 'Bunk' : 'Class'} Assignments
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      }
+
       function AdminDashboard() {
         const toast = useToast();
         const [campers, setCampers] = useState([]);
@@ -1453,6 +1610,9 @@
                   <PasscodePanel />
                 </div>
               </section>
+
+              {/* ── Bulk Import ── */}
+              <BulkImportPanel campers={campers} onDone={load} />
 
               {/* ── Club Portals ── */}
               <ClubCardsPanel appConfig={appConfig} />
