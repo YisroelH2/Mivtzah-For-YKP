@@ -540,68 +540,47 @@
       }
 
       // ── Teacher Login Modal (username + password) ──────────────────────────
-      function TeacherLoginModal({ onClose, onSuccess }) {
-        const [username, setUsername] = useState('');
-        const [password, setPassword] = useState('');
+      // ── Teacher Login — Google Sign-In against an email allowlist ─────────
+      // No accounts to create in-app. To let a teacher in, add their Google
+      // email to the teacher_profiles table directly in Supabase's Table
+      // Editor: email, name, bunk. That's it — no signup flow needed.
+      function TeacherLoginModal({ onClose }) {
         const [busy, setBusy] = useState(false);
         const [error, setError] = useState('');
 
-        const submit = async () => {
-          if (!username.trim() || !password) { setError('Enter username and password.'); return; }
+        const signInWithGoogle = async () => {
           setBusy(true);
           setError('');
-          try {
-            const email = teacherEmail(username);
-            const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password });
-            if (authError) {
-              setBusy(false);
-              setError(authError.message.includes('Invalid') ? 'Incorrect username or password.' : authError.message);
-              return;
-            }
-            const { data: profile, error: profileError } = await supabase
-              .from('teacher_profiles')
-              .select('name,bunk')
-              .eq('user_id', data.user.id)
-              .maybeSingle();
-            setBusy(false);
-            if (profileError || !profile) {
-              await supabase.auth.signOut();
-              setError('Account found but no profile is set up — ask an admin to check your account.');
-              return;
-            }
-            onSuccess({ name: profile.name, bunk: profile.bunk });
-          } catch (err) {
-            setBusy(false);
-            setError(`Error: ${err.message}`);
-          }
+          const { error: authError } = await supabase.auth.signInWithOAuth({
+            provider: 'google',
+            options: { redirectTo: window.location.origin + window.location.pathname },
+          });
+          if (authError) { setBusy(false); setError(authError.message); }
+          // On success the browser redirects to Google, then back here —
+          // App's session-check effect picks up the logged-in user from there.
         };
 
         return (
           <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 backdrop-blur-md p-6">
-            <div className="lux-card w-full max-w-sm rounded-2xl p-7 shadow-luxury">
+            <div className="lux-card w-full max-w-sm rounded-2xl p-7 shadow-luxury text-center">
               <div className="mb-5 flex items-center justify-between">
                 <h2 className="text-xl font-extrabold">Teacher / Counselor Login</h2>
                 <button onClick={onClose} className="focus-ring rounded p-1"><X size={20} /></button>
               </div>
-              <div className="grid gap-3">
-                <TextInput icon={Users} placeholder="Username" value={username} autoFocus
-                  onChange={(e) => setUsername(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && submit()} />
-                <TextInput icon={Lock} type="password" placeholder="Password" value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && submit()} />
-                {error && <p className="rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-500">{error}</p>}
-                <button onClick={submit} disabled={busy} className="app-button focus-ring mt-1 flex items-center justify-center gap-2 rounded-lg px-5 py-3 font-extrabold disabled:opacity-70">
-                  {busy ? <RefreshCw size={18} className="animate-spin" /> : <BadgeCheck size={18} />}
-                  {busy ? 'Checking…' : 'Log In'}
-                </button>
-              </div>
+              <p className="muted-text mb-5 text-sm font-semibold">Sign in with the Google account your admin registered for you.</p>
+              {error && <p className="mb-4 rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-500">{error}</p>}
+              <button onClick={signInWithGoogle} disabled={busy} className="app-button focus-ring flex w-full items-center justify-center gap-3 rounded-lg px-5 py-4 font-extrabold disabled:opacity-70">
+                {busy ? <RefreshCw size={20} className="animate-spin" /> : (
+                  <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C34.5 5.5 29.6 3.5 24 3.5 12.7 3.5 3.5 12.7 3.5 24S12.7 44.5 24 44.5 44.5 35.3 44.5 24c0-1.2-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.6 15.6 18.9 12.5 24 12.5c3.1 0 5.8 1.1 8 3l6-6C34.5 5.5 29.6 3.5 24 3.5c-7.6 0-14.2 4.3-17.7 10.6l0 .6z"/><path fill="#4CAF50" d="M24 44.5c5.5 0 10.4-1.9 14.2-5.1l-6.6-5.5C29.5 35.5 26.9 36.5 24 36.5c-5.3 0-9.7-3.3-11.3-8l-6.6 5.1C9.7 40 16.3 44.5 24 44.5z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.3-4.2 5.8l6.6 5.5C41.6 36 44.5 30.5 44.5 24c0-1.2-.1-2.4-.4-3.5z"/></svg>
+                )}
+                {busy ? 'Redirecting…' : 'Sign in with Google'}
+              </button>
             </div>
           </div>
         );
       }
 
-      function LoginScreen({ onCamper, onAdmin, onTeacher, onClub }) {
+      function LoginScreen({ onCamper, onAdmin, onClub }) {
         const [scan, setScan] = useState('');
         const [busy, setBusy] = useState(false);
         const [cardNotFound, setCardNotFound] = useState(false);
@@ -658,18 +637,6 @@
             try { adminIds = JSON.parse(cfgData?.admin_cards || '[]'); } catch {}
             if (adminIds.some((id) => normalizeNfcId(id) === target)) {
               onAdmin();
-              return;
-            }
-
-            // Teacher card check (handles both old string[] and new object[] format)
-            let teacherCards = [];
-            try { teacherCards = JSON.parse(cfgData?.teacher_cards || '[]'); } catch {}
-            const teacherMatch = teacherCards.find((c) => normalizeNfcId(typeof c === 'string' ? c : (c.nfc_id||'')) === target);
-            if (teacherMatch) {
-              onTeacher(
-                typeof teacherMatch === 'string' ? '' : (teacherMatch.name || ''),
-                typeof teacherMatch === 'string' ? '' : (teacherMatch.bunk || ''),
-              );
               return;
             }
 
@@ -856,7 +823,7 @@
                 </div>
 
                 {showTeacherLogin && (
-                  <TeacherLoginModal onClose={() => setShowTeacherLogin(false)} onSuccess={(t) => { setShowTeacherLogin(false); onTeacher(t.name, t.bunk); }} />
+                  <TeacherLoginModal onClose={() => setShowTeacherLogin(false)} />
                 )}
               </section>
             </div>
@@ -1953,119 +1920,55 @@
 
       // ── Teacher Cards Panel (admin section) ──────────────────────────────
       // Helper — handle both old string format and new object format
-      // ── Teacher email helper — Supabase Auth needs an email, so we build a
-      // fake internal one from the username. Requires "Confirm email" to be
-      // turned OFF in Supabase → Authentication → Providers → Email, since
-      // these addresses can't receive real confirmation mail.
-      function teacherEmail(username) {
-        return `${username.trim().toLowerCase().replace(/\s+/g, '')}@mivtza.local`;
-      }
-
-      // ── Teacher Accounts Panel — real Supabase Auth, admin-safe ────────────
-      // Uses only the public anon key (no service role key in this file).
-      // Creating an account briefly signs the browser in as that new teacher
-      // via supabase.auth.signUp, then immediately signs back out so the
-      // admin's own session isn't affected.
+      // ── Teacher Allowlist Panel — read-only view ────────────────────────
+      // Accounts are managed directly in Supabase (Table Editor → teacher_profiles).
+      // Add a row with: email, name, bunk. That's the entire "sign up" flow —
+      // no in-app account creation needed since Google handles authentication.
       function TeacherAccountsPanel() {
         const [teachers, setTeachers] = useState([]);
         const [loading, setLoading] = useState(true);
-        const [newUsername, setNewUsername] = useState('');
-        const [newPassword, setNewPassword] = useState('');
-        const [newName, setNewName] = useState('');
-        const [newBunk, setNewBunk] = useState('');
-        const [saving, setSaving] = useState(false);
         const toast = useToast();
 
         const load = () => {
           setLoading(true);
-          supabase.from('teacher_profiles').select('user_id,username,name,bunk').order('name').then(({ data }) => {
+          supabase.from('teacher_profiles').select('email,name,bunk').order('name').then(({ data }) => {
             setTeachers(data || []);
             setLoading(false);
           });
         };
         useEffect(load, []);
 
-        const addTeacher = async () => {
-          if (!newUsername.trim() || !newPassword || !newName.trim()) {
-            toast.error('Username, password, and name are all required.'); return;
-          }
-          if (newPassword.length < 6) { toast.error('Password must be at least 6 characters.'); return; }
-          setSaving(true);
-          try {
-            const email = teacherEmail(newUsername);
-            const { data, error: signUpError } = await supabase.auth.signUp({ email, password: newPassword });
-            if (signUpError) { toast.error(`Failed: ${signUpError.message}`); setSaving(false); return; }
-            if (!data.user) { toast.error('Account creation did not return a user — check "Confirm email" is OFF in Supabase Auth settings.'); setSaving(false); return; }
-
-            const { error: profileError } = await supabase.from('teacher_profiles').insert({
-              user_id: data.user.id,
-              username: newUsername.trim().toLowerCase(),
-              name: newName.trim(),
-              bunk: newBunk.trim() || null,
-            });
-
-            // Always sign back out so the admin's browser isn't left logged
-            // in as the newly-created teacher.
-            await supabase.auth.signOut();
-
-            if (profileError) { toast.error(`Profile save failed: ${profileError.message}`); setSaving(false); return; }
-
-            toast.success(`${newName} added ✓`);
-            setNewUsername(''); setNewPassword(''); setNewName(''); setNewBunk('');
-            setSaving(false);
-            load();
-          } catch (err) {
-            await supabase.auth.signOut();
-            toast.error(`Error: ${err.message}`);
-            setSaving(false);
-          }
-        };
-
         const removeTeacher = async (t) => {
-          if (!window.confirm(`Remove ${t.name}'s account? They will no longer be able to log in. (To reset a forgotten password, remove and re-add with a new one.)`)) return;
-          const { error } = await supabase.from('teacher_profiles').delete().eq('user_id', t.user_id);
+          if (!window.confirm(`Remove ${t.name}'s access?`)) return;
+          const { error } = await supabase.from('teacher_profiles').delete().eq('email', t.email);
           if (error) toast.error(`Failed: ${error.message}`);
-          else { toast.success('Removed — they can no longer log in ✓'); load(); }
+          else { toast.success('Removed ✓'); load(); }
         };
 
         return (
           <div className="glass-panel rounded-lg p-5">
             <ToastStack toasts={toast.toasts} remove={toast.remove} />
-            <h2 className="mb-1 flex items-center gap-2 text-xl font-extrabold"><Users className="accent-text" /> Teacher / Counselor Accounts</h2>
-            <p className="muted-text mb-4 text-xs font-semibold">Real Supabase Auth accounts. Assign a bunk so their portal only shows their students — leave blank to see everyone. To change a password, remove the account and re-add with a new one.</p>
-
-            {/* New account form */}
-            <div className="grid gap-2 mb-4">
-              <div className="flex gap-2">
-                <input className="glass-panel flex-1 rounded px-3 py-2 bg-transparent text-sm font-semibold outline-none" placeholder="Full name (e.g. Rabbi Cohen)" value={newName} onChange={(e) => setNewName(e.target.value)} />
-                <input className="glass-panel w-32 rounded px-3 py-2 bg-transparent text-sm font-semibold outline-none" placeholder="Bunk" value={newBunk} onChange={(e) => setNewBunk(e.target.value)} />
-              </div>
-              <div className="flex gap-2">
-                <input className="glass-panel flex-1 rounded px-3 py-2 bg-transparent text-sm font-semibold outline-none" placeholder="Username" value={newUsername} onChange={(e) => setNewUsername(e.target.value)} />
-                <input className="glass-panel flex-1 rounded px-3 py-2 bg-transparent text-sm font-semibold outline-none" type="text" placeholder="Password (min 6 chars)" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
-                <button onClick={addTeacher} disabled={saving} className="app-button focus-ring rounded px-3 py-2 font-extrabold text-sm disabled:opacity-70">
-                  {saving ? <RefreshCw size={16} className="animate-spin" /> : <Plus size={16} />}
-                </button>
-              </div>
-            </div>
-
-            {/* Existing accounts */}
+            <h2 className="mb-1 flex items-center gap-2 text-xl font-extrabold"><Users className="accent-text" /> Teacher / Counselor Access</h2>
+            <p className="muted-text mb-4 text-xs font-semibold">
+              To add a teacher: open Supabase → Table Editor → <code>teacher_profiles</code> → Insert row with their <strong>Google email</strong>, <strong>name</strong>, and <strong>bunk</strong> (must match the roster's Bunk field exactly, e.g. "Kevutza Alef"). They can then sign in here with that Google account — no password to set up.
+            </p>
             <div className="grid gap-2">
               {loading && <p className="muted-text text-sm font-semibold">Loading…</p>}
-              {!loading && teachers.length === 0 && <p className="muted-text text-sm font-semibold">No teacher accounts yet.</p>}
+              {!loading && teachers.length === 0 && <p className="muted-text text-sm font-semibold">No teachers added yet — add one in Supabase Table Editor.</p>}
               {teachers.map((t) => (
-                <div key={t.user_id} className="glass-panel flex items-center justify-between rounded-lg p-3">
+                <div key={t.email} className="glass-panel flex items-center justify-between rounded-lg p-3">
                   <div>
                     <p className="font-bold text-sm">{t.name}</p>
-                    <p className="muted-text text-xs font-semibold">@{t.username}{t.bunk ? ` · ${t.bunk}` : ' · all bunks'}</p>
+                    <p className="muted-text text-xs font-semibold">{t.email}{t.bunk ? ` · ${t.bunk}` : ' · all bunks'}</p>
                   </div>
-                  <button onClick={() => removeTeacher(t)} title="Remove account" className="focus-ring inline-flex h-8 w-8 items-center justify-center rounded border border-red-400/40 text-red-500 hover:scale-105"><Trash2 size={14} /></button>
+                  <button onClick={() => removeTeacher(t)} title="Remove access" className="focus-ring inline-flex h-8 w-8 items-center justify-center rounded border border-red-400/40 text-red-500 hover:scale-105"><Trash2 size={14} /></button>
                 </div>
               ))}
             </div>
           </div>
         );
       }
+
 
 
 
@@ -2083,9 +1986,12 @@
         const ndefRef = useRef(null);
         const nfcProcessingRef = useRef(false); // debounce multiple reads
 
-        // Filter campers to assigned bunk (or all if no bunk assigned)
+        // Filter campers to assigned bunk (or all if no bunk assigned).
+        // Case/whitespace-insensitive so "Kevutza Alef" and "kevutza alef "
+        // both match — avoids a teacher seeing an empty roster over a typo.
+        const bunkMatch = (a, b) => String(a||'').trim().toLowerCase() === String(b||'').trim().toLowerCase();
         const campers = bunk
-          ? allCampers.filter((c) => c.bunk === bunk)
+          ? allCampers.filter((c) => bunkMatch(c.bunk, bunk))
           : allCampers;
 
         useEffect(() => {
@@ -2435,12 +2341,32 @@
       function App() {
         const [camper, setCamper] = useState(null);
         const [adminMode, setAdminMode] = useState(false);
-        const [teacherInfo, setTeacherInfo] = useState(null);  // null | {name, bunk}
+        const [teacherInfo, setTeacherInfo] = useState(null);  // null | {name, bunk} | 'checking' | 'denied'
         const [clubCard, setClubCard] = useState(null);         // null | club config object
         const isAdmin = adminMode || window.location.pathname.endsWith('/admin') || window.location.search.includes('admin');
 
+        // After a Google OAuth redirect, Supabase leaves an active session in
+        // this browser. Check for it once on load, and match the signed-in
+        // email against the teacher_profiles allowlist.
+        useEffect(() => {
+          supabase.auth.getSession().then(async ({ data: { session } }) => {
+            if (!session?.user?.email) return;
+            const { data: profile } = await supabase
+              .from('teacher_profiles')
+              .select('name,bunk')
+              .ilike('email', session.user.email)
+              .maybeSingle();
+            if (profile) {
+              setTeacherInfo({ name: profile.name, bunk: profile.bunk });
+            } else {
+              // Signed in with Google but not on the allowlist — bounce them
+              // back out so they don't get stuck in limbo.
+              await supabase.auth.signOut();
+            }
+          });
+        }, []);
+
         const goAdmin   = () => { sessionStorage.setItem('mivtza_admin_unlocked', '1'); setAdminMode(true); };
-        const goTeacher = (name, bunk) => setTeacherInfo({ name, bunk });
         const goClub    = (club) => setClubCard(club);
         const teacherLogout = () => { supabase.auth.signOut(); setTeacherInfo(null); };
 
@@ -2448,7 +2374,7 @@
         if (teacherInfo) return <ErrorBoundary><TeacherPortal onLogout={teacherLogout} teacherName={teacherInfo.name} bunk={teacherInfo.bunk} /></ErrorBoundary>;
         if (clubCard)    return <ErrorBoundary><ClubPortal onLogout={() => setClubCard(null)} club={clubCard} /></ErrorBoundary>;
         if (camper) return <ErrorBoundary><CamperDashboard camper={camper} onLogout={() => setCamper(null)} /></ErrorBoundary>;
-        return <LoginScreen onCamper={setCamper} onAdmin={goAdmin} onTeacher={goTeacher} onClub={goClub} />;
+        return <LoginScreen onCamper={setCamper} onAdmin={goAdmin} onClub={goClub} />;
       }
 
       createRoot(document.getElementById('root')).render(<App />);
