@@ -1460,6 +1460,18 @@
 
         useEffect(() => { load(); }, []);
 
+        // Shared search predicate for the roster — matches name, NFC ID, bunk, or class.
+        const rosterMatches = (c) => {
+          if (!rosterSearch) return true;
+          const q = rosterSearch.toLowerCase();
+          return (
+            c.name?.toLowerCase().includes(q) ||
+            normalizeNfcId(c.nfc_id).includes(normalizeNfcId(rosterSearch)) ||
+            c.bunk?.toLowerCase().includes(q) ||
+            c.class?.toLowerCase().includes(q)
+          );
+        };
+
         const vip = campers.filter((c) => Number(c.weekly_points) >= Number(appConfig.vip_event_threshold ?? 700));
         const standard = campers.filter((c) => Number(c.weekly_points) >= Number(appConfig.standard_event_threshold ?? 400) && Number(c.weekly_points) < Number(appConfig.vip_event_threshold ?? 700));
         const notEligible = campers.filter((c) => Number(c.weekly_points) < Number(appConfig.standard_event_threshold ?? 400));
@@ -1642,7 +1654,7 @@
                     <ScanLine size={16} className="muted-text shrink-0" />
                     <input
                       className="bg-transparent text-sm font-semibold outline-none w-full placeholder:font-medium"
-                      placeholder="Search by name or card ID…"
+                      placeholder="Search name, card ID, bunk, or class…"
                       value={rosterSearch}
                       onChange={(e) => setRosterSearch(e.target.value)}
                     />
@@ -1658,7 +1670,7 @@
                     {rosterNfcListening ? 'Scanning…' : 'Scan to Find'}
                   </button>
                   <span className="muted-text text-xs font-semibold">
-                    {campers.filter(c => !rosterSearch || c.name?.toLowerCase().includes(rosterSearch.toLowerCase()) || normalizeNfcId(c.nfc_id).includes(normalizeNfcId(rosterSearch))).length} / {campers.length}
+                    {campers.filter(rosterMatches).length} / {campers.length}
                   </span>
                 </div>
                 <div className="overflow-x-auto">
@@ -1671,7 +1683,7 @@
                       </tr>
                     </thead>
                     <tbody>
-                      {campers.filter(c => !rosterSearch || c.name?.toLowerCase().includes(rosterSearch.toLowerCase()) || normalizeNfcId(c.nfc_id).includes(normalizeNfcId(rosterSearch))).map((camper) => {
+                      {campers.filter(rosterMatches).map((camper) => {
                         const isEditing = editRow?.id === camper.id;
                         return (
                           <tr key={camper.id} className="border-t line-border">
