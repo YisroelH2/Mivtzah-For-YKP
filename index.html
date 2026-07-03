@@ -1300,6 +1300,7 @@
       }
 
       function AdminDashboard() {
+        const [tab, setTab] = useState('dashboard'); // 'dashboard' | 'setup'
         const toast = useToast();
         const [campers, setCampers] = useState([]);
         const [appConfig, setAppConfig] = useState(DEFAULT_CONFIG);
@@ -1510,14 +1511,16 @@
         return (
           <Shell admin status="Platinum">
             <ToastStack toasts={toast.toasts} remove={toast.remove} />
-            <div className="mx-auto grid max-w-7xl gap-5">
+            <div className="mx-auto grid max-w-7xl gap-5 pb-24">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h1 className="text-3xl font-extrabold">Private Admin Dashboard</h1>
-                  <p className="muted-text font-semibold">Roster, event eligibility, corrections, and global rules.</p>
+                  <h1 className="text-3xl font-extrabold">{tab === 'dashboard' ? 'Camper Dashboard' : 'Setup & Configuration'}</h1>
+                  <p className="muted-text font-semibold">{tab === 'dashboard' ? 'Roster, event eligibility, and daily corrections.' : 'Cards, accounts, imports, and app-wide rules.'}</p>
                 </div>
                 <IconButton icon={RefreshCw} label="Refresh data" onClick={load} className={loading ? 'animate-spin' : ''} />
               </div>
+
+              {tab === 'dashboard' && (<>
 
               {/* ── Roster ── */}
               <section className="glass-panel overflow-hidden rounded-lg shadow-luxury">
@@ -1611,58 +1614,38 @@
                 <AccessList title="Not Eligible" icon={X} campers={notEligible} />
               </section>
 
-              <section className="grid gap-5 lg:grid-cols-2 xl:grid-cols-4">
-                {/* ── Register Camper ── */}
-                <div className="glass-panel rounded-lg p-5">
-                  <h2 className="mb-4 flex items-center gap-2 text-xl font-extrabold"><Plus className="accent-text" /> Register Camper</h2>
-                  <div className="grid gap-3">
-                    <TextInput icon={Users} placeholder="Camper name" value={newCamper.name} onChange={(e) => setNewCamper({ ...newCamper, name: e.target.value })} />
-                    <div className="flex gap-2">
-                      <label className="glass-panel flex flex-1 items-center gap-3 rounded px-3 py-2">
-                        <ScanLine size={18} className="muted-text shrink-0" />
-                        <input
-                          className="focus-ring min-w-0 flex-1 bg-transparent py-2 text-sm font-semibold outline-none placeholder:font-medium font-mono"
-                          placeholder="Card ID (scan or type)"
-                          value={newCamper.nfc_id}
-                          onChange={(e) => setNewCamper({ ...newCamper, nfc_id: e.target.value })}
-                        />
-                      </label>
-                      <button
-                        onClick={startRegNfcScan}
-                        disabled={regNfcListening}
-                        className="lux-card focus-ring flex items-center gap-2 rounded px-4 py-2 text-sm font-extrabold disabled:opacity-70"
-                        title="Tap card to scan NFC"
-                      >
-                        {regNfcListening ? <RefreshCw size={16} className="animate-spin" /> : <Smartphone size={16} />}
-                        {regNfcListening ? 'Listening…' : 'Tap Card'}
-                      </button>
-                    </div>
-                    <button className="app-button focus-ring rounded px-5 py-3 font-extrabold" onClick={registerCamper}>Register Camper</button>
+              {/* ── Register Camper ── */}
+              <section className="glass-panel rounded-lg p-5">
+                <h2 className="mb-4 flex items-center gap-2 text-xl font-extrabold"><Plus className="accent-text" /> Register Camper</h2>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <TextInput icon={Users} placeholder="Camper name" value={newCamper.name} onChange={(e) => setNewCamper({ ...newCamper, name: e.target.value })} />
+                  <div className="flex gap-2">
+                    <label className="glass-panel flex flex-1 items-center gap-3 rounded px-3 py-2">
+                      <ScanLine size={18} className="muted-text shrink-0" />
+                      <input
+                        className="focus-ring min-w-0 flex-1 bg-transparent py-2 text-sm font-semibold outline-none placeholder:font-medium font-mono"
+                        placeholder="Card ID (scan or type)"
+                        value={newCamper.nfc_id}
+                        onChange={(e) => setNewCamper({ ...newCamper, nfc_id: e.target.value })}
+                      />
+                    </label>
+                    <button
+                      onClick={startRegNfcScan}
+                      disabled={regNfcListening}
+                      className="lux-card focus-ring flex items-center gap-2 rounded px-4 py-2 text-sm font-extrabold disabled:opacity-70"
+                      title="Tap card to scan NFC"
+                    >
+                      {regNfcListening ? <RefreshCw size={16} className="animate-spin" /> : <Smartphone size={16} />}
+                      {regNfcListening ? 'Listening…' : 'Tap Card'}
+                    </button>
                   </div>
                 </div>
-
-                {/* ── Admin Cards ── */}
-                <AdminCardsPanel />
-
-                {/* ── Teacher / Counselor Cards ── */}
-                <TeacherAccountsPanel />
-
-                <div className="glass-panel rounded-lg p-5">
-                  <h2 className="mb-4 flex items-center gap-2 text-xl font-extrabold"><Settings className="accent-text" /> Admin Passcode</h2>
-                  <PasscodePanel />
-                </div>
+                <button className="app-button focus-ring mt-3 rounded px-5 py-3 font-extrabold" onClick={registerCamper}>Register Camper</button>
               </section>
 
-              {/* ── Bulk Import ── */}
-              <BulkImportPanel campers={campers} onDone={load} />
-
-              {/* ── Club Portals ── */}
-              <ClubCardsPanel appConfig={appConfig} />
-
+              {/* ── Data Correction Panel ── */}
               <section className="glass-panel rounded-lg p-5">
                 <h2 className="mb-4 flex items-center gap-2 text-xl font-extrabold"><PencilLine className="accent-text" /> Data Correction Panel</h2>
-
-                {/* Camper search + select */}
                 <div className="mb-3 grid gap-3 lg:grid-cols-[1fr_auto]">
                   <div className="grid gap-2">
                     <label className="glass-panel flex items-center gap-2 rounded px-3 py-2">
@@ -1721,12 +1704,55 @@
                 <button className="app-button focus-ring mt-4 inline-flex items-center gap-2 rounded px-5 py-3 font-extrabold" onClick={saveCorrection}><Save size={18} /> Save Entry + Manual Pts</button>
               </section>
 
+              </>)}
+
+              {tab === 'setup' && (<>
+
+              {/* ── Cards & Accounts ── */}
+              <section className="grid gap-5 lg:grid-cols-3">
+                <AdminCardsPanel />
+                <TeacherAccountsPanel />
+                <div className="glass-panel rounded-lg p-5">
+                  <h2 className="mb-4 flex items-center gap-2 text-xl font-extrabold"><Settings className="accent-text" /> Admin Passcode</h2>
+                  <PasscodePanel />
+                </div>
+              </section>
+
+              {/* ── Bulk Import ── */}
+              <BulkImportPanel campers={campers} onDone={load} />
+
+              {/* ── Club Portals ── */}
+              <ClubCardsPanel appConfig={appConfig} />
+
               {/* ── Structured App Configuration ── */}
               <section className="glass-panel rounded-lg p-5">
                 <h2 className="mb-1 flex items-center gap-2 text-xl font-extrabold"><Gauge className="accent-text" /> App Configuration</h2>
                 <p className="muted-text mb-5 text-xs font-semibold">All settings save to Supabase and sync to every device instantly. Labels, points, and items are fully customizable.</p>
                 <ConfigEditor config={appConfig} periodStart={periodStart} periodEnd={periodEnd} onSave={saveConfig} />
               </section>
+
+              </>)}
+
+            </div>
+
+            {/* ── Bottom tab nav ── */}
+            <div className="fixed bottom-0 inset-x-0 z-40 border-t line-border bg-[var(--bg-2)]/90 backdrop-blur-lg">
+              <div className="mx-auto flex max-w-md items-center justify-around px-4 py-2">
+                <button
+                  onClick={() => setTab('dashboard')}
+                  className={classNames('focus-ring flex flex-1 flex-col items-center gap-1 rounded-xl py-2 transition', tab === 'dashboard' ? 'accent-text' : 'muted-text')}
+                >
+                  <Users size={22} strokeWidth={tab === 'dashboard' ? 2.5 : 2} />
+                  <span className="text-xs font-extrabold">Dashboard</span>
+                </button>
+                <button
+                  onClick={() => setTab('setup')}
+                  className={classNames('focus-ring flex flex-1 flex-col items-center gap-1 rounded-xl py-2 transition', tab === 'setup' ? 'accent-text' : 'muted-text')}
+                >
+                  <Settings size={22} strokeWidth={tab === 'setup' ? 2.5 : 2} />
+                  <span className="text-xs font-extrabold">Setup</span>
+                </button>
+              </div>
             </div>
           </Shell>
         );
