@@ -852,12 +852,15 @@
           Object.entries(entry).forEach(([k, v]) => {
             if (KNOWN_ENTRY_COLUMNS.has(k)) known[k] = v; else extra[k] = v;
           });
-          const { error: insertError } = await supabase.from('daily_entries').insert({
+          // upsert (not insert) so that if the same camper submits again today
+          // on a different device, the new entry overwrites the old one instead
+          // of throwing a duplicate-key error.
+          const { error: insertError } = await supabase.from('daily_entries').upsert({
             camper_id: camper.id,
             entry_date: today(),
             ...known,
             ...(Object.keys(extra).length ? { entry_data: extra } : {}),
-          });
+          }, { onConflict: 'camper_id,entry_date' });
           if (insertError) { toast.error(insertError.message); return; }
           setApproved(true);
           window.setTimeout(() => { setApproved(false); onLogout(); }, 2000);
@@ -1065,6 +1068,8 @@
         const [appConfig, setAppConfig] = useState(DEFAULT_CONFIG);
         const [configId, setConfigId] = useState(null);
         const [configAdminCards, setConfigAdminCards] = useState('');
+        const [periodStart, setPeriodStart] = useState('');
+        const [periodEnd, setPeriodEnd] = useState('');
         const [loading, setLoading] = useState(true);
         const [rosterSearch, setRosterSearch] = useState('');
 
@@ -1091,12 +1096,14 @@
           setLoading(true);
           const [{ data: roster }, { data: configRow }] = await Promise.all([
             supabase.from(CAMPER_READ_TABLE).select('*').order('name'),
-            supabase.from('mivtza_config').select('id,config_json,admin_cards').limit(1).maybeSingle(),
+            supabase.from('mivtza_config').select('id,config_json,admin_cards,week_start_date,week_end_date').limit(1).maybeSingle(),
           ]);
           setCampers(roster || []);
           if (configRow) {
             setConfigId(configRow.id || null);
             setConfigAdminCards(configRow.admin_cards || '');
+            if (configRow.week_start_date) setPeriodStart(configRow.week_start_date);
+            if (configRow.week_end_date) setPeriodEnd(configRow.week_end_date);
             if (configRow.config_json) {
               try { setAppConfig(JSON.parse(configRow.config_json)); } catch {}
             }
@@ -1212,13 +1219,24 @@
         };
 
         // ── Save app config to mivtza_config.config_json ────────────────────
-        const saveConfig = async (cfg) => {
-          const payload = { config_json: JSON.stringify(cfg), ...(configAdminCards ? { admin_cards: configAdminCards } : {}) };
+        const saveConfig = async (cfg, wStart, wEnd) => {
+          const payload = {
+            config_json: JSON.stringify(cfg),
+            ...(configAdminCards ? { admin_cards: configAdminCards } : {}),
+            ...(wStart ? { week_start_date: wStart } : {}),
+            ...(wEnd   ? { week_end_date:   wEnd   } : {}),
+          };
           const { error } = configId
             ? await supabase.from('mivtza_config').update(payload).eq('id', configId)
             : await supabase.from('mivtza_config').upsert(payload);
           if (error) toast.error(`Save failed: ${error.message}`);
-          else { toast.success('Config saved ✓'); setAppConfig(cfg); load(); }
+          else {
+            toast.success('Config saved ✓');
+            setAppConfig(cfg);
+            if (wStart) setPeriodStart(wStart);
+            if (wEnd) setPeriodEnd(wEnd);
+            load();
+          }
         };
 
         const startRosterNfcScan = async () => {
@@ -1459,7 +1477,7 @@
               <section className="glass-panel rounded-lg p-5">
                 <h2 className="mb-1 flex items-center gap-2 text-xl font-extrabold"><Gauge className="accent-text" /> App Configuration</h2>
                 <p className="muted-text mb-5 text-xs font-semibold">All settings save to Supabase and sync to every device instantly. Labels, points, and items are fully customizable.</p>
-                <ConfigEditor config={appConfig} onSave={saveConfig} />
+                <ConfigEditor config={appConfig} periodStart={periodStart} periodEnd={periodEnd} onSave={saveConfig} />
               </section>
             </div>
           </Shell>
@@ -1467,10 +1485,16 @@
       }
 
       // ── Structured Config Editor ────────────────────────────────────────────
-      function ConfigEditor({ config, onSave }) {
+      function ConfigEditor({ config, periodStart, periodEnd, onSave }) {
         const [draft, setDraft] = useState(() => JSON.parse(JSON.stringify(config)));
+        const [wStart, setWStart] = useState(periodStart || '');
+        const [wEnd, setWEnd] = useState(periodEnd || '');
 
-        useEffect(() => { setDraft(JSON.parse(JSON.stringify(config))); }, [config]);
+        useEffect(() => {
+          setDraft(JSON.parse(JSON.stringify(config)));
+          setWStart(periodStart || '');
+          setWEnd(periodEnd || '');
+        }, [config, periodStart, periodEnd]);
 
         const updateLearning = (idx, field, value) => {
           const next = [...draft.learning_items];
@@ -1576,13 +1600,35 @@
               </div>
             </div>
 
-            {/* ── Thresholds + Week ── */}
+            {/* ── Period / Week Dates ── */}
             <div>
-              <h3 className="mb-3 font-extrabold">🏆 Thresholds & Schedule</h3>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <h3 className="mb-1 font-extrabold">📅 Competition Period</h3>
+              <p className="muted-text mb-3 text-xs font-semibold">Set any start and end date — can be 3 days, 7 days, 2 weeks, whatever you need. Weekly points in the roster show totals within this range.</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="grid gap-1">
+                  <span className="muted-text text-xs font-extrabold uppercase tracking-[0.08em]">Period Start Date</span>
+                  <input className="focus-ring rounded border line-border bg-transparent px-3 py-2 font-bold" type="date" value={wStart} onChange={(e) => setWStart(e.target.value)} />
+                </label>
+                <label className="grid gap-1">
+                  <span className="muted-text text-xs font-extrabold uppercase tracking-[0.08em]">Period End Date</span>
+                  <input className="focus-ring rounded border line-border bg-transparent px-3 py-2 font-bold" type="date" value={wEnd} onChange={(e) => setWEnd(e.target.value)} />
+                </label>
+              </div>
+              {wStart && wEnd && (
+                <p className="muted-text mt-2 text-xs font-semibold">
+                  {Math.round((new Date(wEnd) - new Date(wStart)) / 86400000) + 1} day period · {wStart} → {wEnd}
+                </p>
+              )}
+              <p className="muted-text mt-2 text-xs font-semibold">⚠ After saving here, also run the SQL in Supabase to update the <code>camper_profiles</code> view so it reads from <code>week_start_date</code> and <code>week_end_date</code> in <code>mivtza_config</code>.</p>
+            </div>
+
+            {/* ── Thresholds ── */}
+            <div>
+              <h3 className="mb-3 font-extrabold">🏆 Thresholds</h3>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {[
-                  { key: 'standard_event_threshold', label: 'Standard Event (pts/week)' },
-                  { key: 'vip_event_threshold',      label: 'VIP Event (pts/week)' },
+                  { key: 'standard_event_threshold', label: 'Standard Event (pts/period)' },
+                  { key: 'vip_event_threshold',      label: 'VIP Event (pts/period)' },
                   { key: 'tier_platinum',             label: 'Platinum Card (lifetime pts)' },
                   { key: 'tier_black',                label: 'Black Card (lifetime pts)' },
                 ].map(({ key, label }) => (
@@ -1591,16 +1637,7 @@
                     <input className="focus-ring rounded border line-border bg-transparent px-3 py-2 font-bold text-sm" type="number" value={draft[key]??''} onChange={(e)=>setNum(key,e.target.value)} />
                   </label>
                 ))}
-                <label className="grid gap-1">
-                  <span className="muted-text text-xs font-extrabold uppercase tracking-[0.08em]">Week starts on</span>
-                  <select className="focus-ring rounded border line-border bg-transparent px-3 py-2 font-bold text-sm" value={draft.week_start_day??0} onChange={(e)=>setNum('week_start_day',e.target.value)}>
-                    {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((d,i)=>(
-                      <option key={i} value={i}>{d}</option>
-                    ))}
-                  </select>
-                </label>
               </div>
-              <p className="muted-text mt-2 text-xs font-semibold">⚠ Week start change requires updating the <code>camper_profiles</code> view SQL in Supabase to use <code>date_trunc</code> with the matching day offset.</p>
             </div>
 
             {/* ── Summary + Save ── */}
@@ -1609,7 +1646,7 @@
                 <span className="font-extrabold">Max daily score:</span> {learningTotal} (learning) + {hanhagaMax} (hanhagos) + {teacherTotal} (teacher) = <span className="shimmer-text font-extrabold">{learningTotal + hanhagaMax + teacherTotal} pts</span>
               </p>
             </div>
-            <button className="app-button focus-ring inline-flex items-center gap-2 rounded px-5 py-3 font-extrabold" onClick={() => onSave(draft)}>
+            <button className="app-button focus-ring inline-flex items-center gap-2 rounded px-5 py-3 font-extrabold" onClick={() => onSave(draft, wStart, wEnd)}>
               <Save size={18} /> Save All Config
             </button>
           </div>
