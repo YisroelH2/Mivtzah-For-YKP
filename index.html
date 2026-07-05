@@ -568,13 +568,38 @@
           if (isNewAccount && password.length < 6) { setError('Password must be at least 6 characters.'); return; }
           setBusy(true);
           setError('');
-          const authFn = isNewAccount ? supabase.auth.signUp : supabase.auth.signInWithPassword;
-          const { error: authError } = await authFn({ email: email.trim(), password });
-          if (authError) { setBusy(false); setError(authError.message); return; }
-          const found = await onAuthed();
-          setBusy(false);
-          if (found) onClose();
-          else setError('Signed in, but this email is not on the teacher list. Ask an admin to add you in Supabase.');
+          try {
+            // Call these directly on supabase.auth (not through a bare variable) —
+            // extracting the method into a variable strips the `this` binding
+            // that GoTrueClient needs internally, causing it to throw before
+            // ever reaching the network call. That left the button stuck on
+            // "Please wait…" forever with no visible error.
+            const { error: authError } = isNewAccount
+              ? await supabase.auth.signUp({ email: email.trim(), password })
+              : await supabase.auth.signInWithPassword({ email: email.trim(), password });
+
+            if (authError) {
+              window.alert(authError.message);
+              setError(authError.message);
+              return;
+            }
+
+            const found = await onAuthed();
+            if (found) {
+              onClose();
+            } else {
+              const msg = 'Signed in, but this email is not on the teacher list. Ask an admin to add you in Supabase.';
+              window.alert(msg);
+              setError(msg);
+            }
+          } catch (err) {
+            // Catches any unexpected JS error (network failure, etc.) so the
+            // spinner never gets stuck silently again.
+            window.alert(err.message || 'Something went wrong. Please try again.');
+            setError(err.message || 'Something went wrong. Please try again.');
+          } finally {
+            setBusy(false);
+          }
         };
 
         return (
@@ -1100,17 +1125,36 @@
           if (isNewAccount && password.length < 6) { setError('Password must be at least 6 characters.'); return; }
           setBusy(true);
           setError('');
-          const authFn = isNewAccount ? supabase.auth.signUp : supabase.auth.signInWithPassword;
-          const { error: authError } = await authFn({ email: email.trim(), password });
-          if (authError) { setBusy(false); setError(authError.message); return; }
-          const { data } = await supabase.from('admin_profiles').select('email').ilike('email', email.trim()).maybeSingle();
-          setBusy(false);
-          if (data) {
-            sessionStorage.setItem('mivtza_admin_unlocked', '1');
-            setUnlocked(true);
-          } else {
-            await supabase.auth.signOut();
-            setError('Signed in, but this email is not on the admin list. Add it to admin_profiles in Supabase.');
+          try {
+            // Call these directly on supabase.auth — extracting the method into
+            // a bare variable strips the `this` binding GoTrueClient needs,
+            // which throws before the network call ever fires and leaves the
+            // button stuck spinning with no visible error.
+            const { error: authError } = isNewAccount
+              ? await supabase.auth.signUp({ email: email.trim(), password })
+              : await supabase.auth.signInWithPassword({ email: email.trim(), password });
+
+            if (authError) {
+              window.alert(authError.message);
+              setError(authError.message);
+              return;
+            }
+
+            const { data } = await supabase.from('admin_profiles').select('email').ilike('email', email.trim()).maybeSingle();
+            if (data) {
+              sessionStorage.setItem('mivtza_admin_unlocked', '1');
+              setUnlocked(true);
+            } else {
+              await supabase.auth.signOut();
+              const msg = 'Signed in, but this email is not on the admin list. Add it to admin_profiles in Supabase.';
+              window.alert(msg);
+              setError(msg);
+            }
+          } catch (err) {
+            window.alert(err.message || 'Something went wrong. Please try again.');
+            setError(err.message || 'Something went wrong. Please try again.');
+          } finally {
+            setBusy(false);
           }
         };
 
@@ -2242,12 +2286,16 @@
         const ndefRef = useRef(null);
         const nfcProcessingRef = useRef(false); // debounce multiple reads
 
-        // Filter campers to assigned bunk (or all if no bunk assigned).
-        // Case/whitespace-insensitive so "Kevutza Alef" and "kevutza alef "
-        // both match — avoids a teacher seeing an empty roster over a typo.
-        const bunkMatch = (a, b) => String(a||'').trim().toLowerCase() === String(b||'').trim().toLowerCase();
+        // The teacher_profiles.bunk column holds different things depending on
+        // role: for a counselor it's a Kevutza/bunk string (e.g. "Kevutza Zayin
+        // (Bunkhouse #12)") which matches campers.bunk; for a learning teacher
+        // it's their Rabbi name (e.g. "Rabbi Jackobson") which matches
+        // campers.class instead. Since both roles share one 'bunk' field, we
+        // check it against EITHER camper column — exact match only (no
+        // substring/parentheses logic), case-insensitive and whitespace-trimmed.
+        const exactMatch = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
         const campers = bunk
-          ? allCampers.filter((c) => bunkMatch(c.bunk, bunk))
+          ? allCampers.filter((c) => exactMatch(c.bunk, bunk) || exactMatch(c.class, bunk))
           : allCampers;
 
         useEffect(() => {
