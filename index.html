@@ -585,17 +585,6 @@
                 <button onClick={onClose} className="focus-ring rounded p-1"><X size={20} /></button>
               </div>
 
-              <button onClick={signInWithGoogle} disabled={busy} className="app-button focus-ring flex w-full items-center justify-center gap-3 rounded-lg px-5 py-4 font-extrabold disabled:opacity-70">
-                <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C34.5 5.5 29.6 3.5 24 3.5 12.7 3.5 3.5 12.7 3.5 24S12.7 44.5 24 44.5 44.5 35.3 44.5 24c0-1.2-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.6 15.6 18.9 12.5 24 12.5c3.1 0 5.8 1.1 8 3l6-6C34.5 5.5 29.6 3.5 24 3.5c-7.6 0-14.2 4.3-17.7 10.6l0 .6z"/><path fill="#4CAF50" d="M24 44.5c5.5 0 10.4-1.9 14.2-5.1l-6.6-5.5C29.5 35.5 26.9 36.5 24 36.5c-5.3 0-9.7-3.3-11.3-8l-6.6 5.1C9.7 40 16.3 44.5 24 44.5z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.3-4.2 5.8l6.6 5.5C41.6 36 44.5 30.5 44.5 24c0-1.2-.1-2.4-.4-3.5z"/></svg>
-                Sign in with Google
-              </button>
-
-              <div className="my-4 flex items-center gap-3">
-                <div className="h-px flex-1 bg-white/10" />
-                <span className="muted-text text-xs font-extrabold">OR</span>
-                <div className="h-px flex-1 bg-white/10" />
-              </div>
-
               <div className="grid gap-3">
                 <TextInput icon={Users} type="email" placeholder="Email" value={email}
                   onChange={(e) => setEmail(e.target.value)} />
@@ -603,7 +592,7 @@
                   onChange={(e) => setPassword(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && submitPassword()} />
                 {error && <p className="rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-500">{error}</p>}
-                <button onClick={submitPassword} disabled={busy} className="glass-panel focus-ring flex items-center justify-center gap-2 rounded-lg px-5 py-3 font-extrabold disabled:opacity-70">
+                <button onClick={submitPassword} disabled={busy} className="app-button focus-ring flex items-center justify-center gap-2 rounded-lg px-5 py-3 font-extrabold disabled:opacity-70">
                   {busy ? <RefreshCw size={16} className="animate-spin" /> : <BadgeCheck size={16} />}
                   {busy ? 'Please wait…' : (isNewAccount ? 'Create Account & Sign In' : 'Sign In')}
                 </button>
@@ -611,6 +600,17 @@
                   {isNewAccount ? 'Already have a password? Sign in' : 'First time? Create a password'}
                 </button>
               </div>
+
+              <div className="my-4 flex items-center gap-3">
+                <div className="h-px flex-1 bg-white/10" />
+                <span className="muted-text text-xs font-extrabold">OR</span>
+                <div className="h-px flex-1 bg-white/10" />
+              </div>
+
+              <button onClick={signInWithGoogle} disabled={busy} className="glass-panel focus-ring flex w-full items-center justify-center gap-3 rounded-lg px-5 py-4 font-extrabold disabled:opacity-70">
+                <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C34.5 5.5 29.6 3.5 24 3.5 12.7 3.5 3.5 12.7 3.5 24S12.7 44.5 24 44.5 44.5 35.3 44.5 24c0-1.2-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.6 15.6 18.9 12.5 24 12.5c3.1 0 5.8 1.1 8 3l6-6C34.5 5.5 29.6 3.5 24 3.5c-7.6 0-14.2 4.3-17.7 10.6l0 .6z"/><path fill="#4CAF50" d="M24 44.5c5.5 0 10.4-1.9 14.2-5.1l-6.6-5.5C29.5 35.5 26.9 36.5 24 36.5c-5.3 0-9.7-3.3-11.3-8l-6.6 5.1C9.7 40 16.3 44.5 24 44.5z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.3-4.2 5.8l6.6 5.5C41.6 36 44.5 30.5 44.5 24c0-1.2-.1-2.4-.4-3.5z"/></svg>
+                Sign in with Google
+              </button>
             </div>
           </div>
         );
@@ -2674,4 +2674,4 @@
       }
     </script>
   </body>
-</html> 
+</html>
