@@ -238,7 +238,7 @@
   </head>
   <body>
     <div id="root"></div>
- 
+
     <script id="app-source" type="text/plain">
       import React, { useEffect, useMemo, useRef, useState } from 'https://esm.sh/react@18.3.1';
       import { createRoot } from 'https://esm.sh/react-dom@18.3.1/client';
@@ -552,6 +552,7 @@
               </div>
             </div>
             {children}
+            <p className="muted-text mx-auto mt-8 max-w-7xl px-1 text-center text-[10px] font-semibold tracking-widest opacity-40">V30</p>
           </main>
         );
       }
@@ -2793,11 +2794,30 @@
         );
       }
 
+      // ── Initialization splash ────────────────────────────────────────────
+      // Shown while the async Supabase session check is still in flight, so
+      // the app never has to render the landing page (gold card + buttons)
+      // on the very first paint only to yank it away a moment later once we
+      // learn the user is actually a signed-in teacher. Sits on the same
+      // body background gradient already defined in the page's CSS, so there
+      // is no flash of a mismatched color either.
+      function InitSplash() {
+        return (
+          <div className="grid min-h-screen place-items-center">
+            <div className="flex flex-col items-center gap-4">
+              <CreditCard size={40} className="shimmer-text" strokeWidth={1.5} />
+              <RefreshCw size={18} className="muted-text animate-spin" />
+            </div>
+          </div>
+        );
+      }
+
       function App() {
         const [camper, setCamper] = useState(null);
         const [adminMode, setAdminMode] = useState(false);
         const [teacherInfo, setTeacherInfo] = useState(null);  // null | {name, bunk}
         const [clubCard, setClubCard] = useState(null);         // null | club config object
+        const [sessionChecked, setSessionChecked] = useState(false);
         const isAdmin = adminMode || window.location.pathname.endsWith('/admin') || window.location.search.includes('admin');
 
         // Checks for an active Supabase Auth session (set either by a Google
@@ -2824,14 +2844,30 @@
           return false;
         };
 
-        // Run once on load to catch a Google OAuth redirect completing.
-        useEffect(() => { checkTeacherSession(); }, []);
+        // Run once on load to catch a Google OAuth redirect (or an existing
+        // password-login session) completing. The admin route skips this
+        // entirely — AdminGate manages its own auth state independently —
+        // so admin access is never delayed waiting on a teacher-session check
+        // that doesn't apply to it.
+        useEffect(() => {
+          if (isAdmin) { setSessionChecked(true); return; }
+          checkTeacherSession().finally(() => setSessionChecked(true));
+        }, []);
 
         const goAdmin   = () => { sessionStorage.setItem('mivtza_admin_unlocked', '1'); setAdminMode(true); };
         const goClub    = (club) => setClubCard(club);
         const teacherLogout = () => { supabase.auth.signOut(); setTeacherInfo(null); };
 
         if (isAdmin) return <AdminGate><AdminDashboard /></AdminGate>;
+
+        // Hold everything behind a minimal splash until the session check
+        // above resolves. Without this gate, the very first render would
+        // fall through to LoginScreen (teacherInfo starts null) — showing
+        // the gold card and action buttons — and only snap over to
+        // TeacherPortal once the async getSession() call finished a moment
+        // later. This guarantees the person only ever sees one screen.
+        if (!sessionChecked) return <InitSplash />;
+
         if (teacherInfo) return <ErrorBoundary><TeacherPortal onLogout={teacherLogout} teacherName={teacherInfo.name} bunk={teacherInfo.bunk} /></ErrorBoundary>;
         if (clubCard)    return <ErrorBoundary><ClubPortal onLogout={() => setClubCard(null)} club={clubCard} /></ErrorBoundary>;
         if (camper) return <ErrorBoundary><CamperDashboard camper={camper} onLogout={() => setCamper(null)} /></ErrorBoundary>;
