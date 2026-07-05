@@ -2083,6 +2083,13 @@
         const [loading, setLoading] = useState(true);
         const toast = useToast();
 
+        // Bulk import state
+        const [showBulk, setShowBulk] = useState(false);
+        const [bulkRaw, setBulkRaw] = useState('');
+        const [defaultPassword, setDefaultPassword] = useState('');
+        const [importing, setImporting] = useState(false);
+        const [importProgress, setImportProgress] = useState(null); // {done, total}
+
         const load = () => {
           setLoading(true);
           supabase.from('teacher_profiles').select('email,name,bunk').order('name').then(({ data }) => {
@@ -2099,23 +2106,118 @@
           else { toast.success('Removed ✓'); load(); }
         };
 
+        // Save an edited bunk inline (no separate save button — saves on blur)
+        const updateBunk = async (email, bunk) => {
+          const { error } = await supabase.from('teacher_profiles').update({ bunk: bunk || null }).eq('email', email);
+          if (error) toast.error(`Failed to save bunk: ${error.message}`);
+        };
+
+        // Parse pasted rows: "Name<TAB>email" per line, or "Name,email".
+        // Skips the header row automatically if it says "name"/"email".
+        const parseRows = () => {
+          const lines = bulkRaw.replace(/\r/g, '').split('\n').map((l) => l.trim()).filter(Boolean);
+          const rows = [];
+          for (const line of lines) {
+            const parts = line.includes('\t') ? line.split('\t') : line.split(',');
+            if (parts.length < 2) continue;
+            const name = parts[0].trim();
+            const email = parts[1].trim().toLowerCase();
+            if (!name || !email || !email.includes('@')) continue;
+            if (name.toLowerCase() === 'name' && email.toLowerCase() === 'email') continue; // header row
+            rows.push({ name, email });
+          }
+          return rows;
+        };
+
+        const bulkImport = async () => {
+          const rows = parseRows();
+          if (rows.length === 0) { toast.error('Nothing parsed — paste Name and Email columns (from the sheet, tab-separated).'); return; }
+          if (!defaultPassword || defaultPassword.length < 6) { toast.error('Set a default password (min 6 characters) for all new accounts.'); return; }
+
+          setImporting(true);
+          setImportProgress({ done: 0, total: rows.length });
+          let created = 0, alreadyHadAccount = 0, failed = 0;
+
+          for (let i = 0; i < rows.length; i++) {
+            const { name, email } = rows[i];
+            try {
+              // Try creating a real Supabase Auth account with the default password.
+              const { error: signUpError } = await supabase.auth.signUp({ email, password: defaultPassword });
+              // Always sign back out immediately so the admin's browser session
+              // isn't left authenticated as whichever teacher we just created.
+              await supabase.auth.signOut();
+
+              if (signUpError && !signUpError.message.toLowerCase().includes('already registered')) {
+                failed++;
+              } else if (signUpError) {
+                alreadyHadAccount++;
+              } else {
+                created++;
+              }
+
+              // Either way, make sure they're on the allowlist (upsert by email).
+              await supabase.from('teacher_profiles').upsert({ email, name }, { onConflict: 'email' });
+            } catch {
+              failed++;
+            }
+            setImportProgress({ done: i + 1, total: rows.length });
+          }
+
+          setImporting(false);
+          setImportProgress(null);
+          toast.success(`${created} new account(s), ${alreadyHadAccount} already existed, ${failed} failed ✓`);
+          setBulkRaw('');
+          setShowBulk(false);
+          load();
+        };
+
         return (
           <div className="glass-panel rounded-lg p-5">
             <ToastStack toasts={toast.toasts} remove={toast.remove} />
-            <h2 className="mb-1 flex items-center gap-2 text-xl font-extrabold"><Users className="accent-text" /> Teacher / Counselor Access</h2>
+            <div className="mb-1 flex items-center justify-between">
+              <h2 className="flex items-center gap-2 text-xl font-extrabold"><Users className="accent-text" /> Teacher / Counselor Access</h2>
+              <button onClick={() => setShowBulk((v) => !v)} className="app-button focus-ring inline-flex items-center gap-1 rounded px-3 py-1.5 text-xs font-extrabold">
+                <Plus size={13} /> Bulk Add
+              </button>
+            </div>
             <p className="muted-text mb-4 text-xs font-semibold">
-              To add a teacher: open Supabase → Table Editor → <code>teacher_profiles</code> → Insert row with their <strong>Google email</strong>, <strong>name</strong>, and <strong>bunk</strong> (must match the roster's Bunk field exactly, e.g. "Kevutza Alef"). They can then sign in here with that Google account — no password to set up.
+              They can sign in with <strong>Google</strong> using the email below (no password needed) — or with <strong>email + the default password</strong> you set here. Add a bunk so their portal only shows their students.
             </p>
+
+            {showBulk && (
+              <div className="glass-panel mb-4 rounded-lg p-4 grid gap-3">
+                <p className="text-xs font-semibold">Paste Name + Email rows from your sheet (tab or comma separated, one per line):</p>
+                <textarea
+                  className="glass-panel focus-ring w-full rounded-lg p-3 text-xs font-mono outline-none"
+                  rows={6}
+                  placeholder={"ostro\tostroschneur101@gmail.com\nBarber\tdovidbarber1234@gmail.com\n…"}
+                  value={bulkRaw}
+                  onChange={(e) => setBulkRaw(e.target.value)}
+                />
+                <TextInput icon={Lock} type="text" placeholder="Default password for all new accounts (min 6 chars)" value={defaultPassword} onChange={(e) => setDefaultPassword(e.target.value)} />
+                <button onClick={bulkImport} disabled={importing} className="app-button focus-ring inline-flex items-center justify-center gap-2 rounded px-5 py-3 font-extrabold disabled:opacity-70">
+                  {importing ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}
+                  {importing && importProgress ? `Creating ${importProgress.done}/${importProgress.total}…` : 'Create All Accounts'}
+                </button>
+              </div>
+            )}
+
             <div className="grid gap-2">
               {loading && <p className="muted-text text-sm font-semibold">Loading…</p>}
-              {!loading && teachers.length === 0 && <p className="muted-text text-sm font-semibold">No teachers added yet — add one in Supabase Table Editor.</p>}
+              {!loading && teachers.length === 0 && <p className="muted-text text-sm font-semibold">No teachers added yet.</p>}
               {teachers.map((t) => (
-                <div key={t.email} className="glass-panel flex items-center justify-between rounded-lg p-3">
-                  <div>
-                    <p className="font-bold text-sm">{t.name}</p>
-                    <p className="muted-text text-xs font-semibold">{t.email}{t.bunk ? ` · ${t.bunk}` : ' · all bunks'}</p>
+                <div key={t.email} className="glass-panel flex items-center gap-3 rounded-lg p-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-sm truncate">{t.name}</p>
+                    <p className="muted-text text-xs font-semibold truncate">{t.email}</p>
                   </div>
-                  <button onClick={() => removeTeacher(t)} title="Remove access" className="focus-ring inline-flex h-8 w-8 items-center justify-center rounded border border-red-400/40 text-red-500 hover:scale-105"><Trash2 size={14} /></button>
+                  <input
+                    className="w-32 rounded border line-border bg-transparent px-2 py-1.5 text-xs font-semibold outline-none"
+                    placeholder="Bunk (all if blank)"
+                    defaultValue={t.bunk || ''}
+                    onBlur={(e) => updateBunk(t.email, e.target.value)}
+                  />
+                  <button onClick={() => removeTeacher(t)} title="Remove access" className="focus-ring inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-red-400/40 text-red-500 hover:scale-105"><Trash2 size={14} /></button>
                 </div>
               ))}
             </div>
