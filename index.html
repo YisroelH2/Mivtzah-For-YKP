@@ -4,7 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Mivtza Amek</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💳</text></svg>" />
+    <link rel="icon" type="image/png" href="./icon-192.png" />
+    <link rel="apple-touch-icon" href="./icon-192.png" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#c89c3b" />
     <meta name="mobile-web-app-capable" content="yes" />
@@ -246,6 +247,7 @@
         BadgeCheck,
         CalendarDays,
         Check,
+        ChevronLeft,
         ChevronRight,
         CreditCard,
         Gauge,
@@ -276,6 +278,28 @@
       const CAMPER_WRITE_TABLE = 'campers';
 
       const today = () => new Date().toISOString().slice(0, 10);
+
+      // Shifts a 'YYYY-MM-DD' string by `delta` days. Built entirely on UTC
+      // arithmetic (Date.UTC + setUTCDate) rather than local-time Date
+      // construction — parsing "YYYY-MM-DDT00:00:00" in a timezone ahead of
+      // UTC (e.g. Israel) would silently roll the date back a day once
+      // converted through toISOString(). Using UTC throughout sidesteps that
+      // entirely, regardless of what timezone the device is set to.
+      function shiftDate(dateStr, delta) {
+        const [y, m, d] = dateStr.split('-').map(Number);
+        const dt = new Date(Date.UTC(y, m - 1, d));
+        dt.setUTCDate(dt.getUTCDate() + delta);
+        return dt.toISOString().slice(0, 10);
+      }
+
+      // Formats 'YYYY-MM-DD' as "Sunday, Jul 5, 2026" — same UTC-anchored
+      // approach so the displayed weekday always matches the stored date
+      // regardless of the viewer's local timezone.
+      function formatDateHuman(dateStr) {
+        const [y, m, d] = dateStr.split('-').map(Number);
+        const dt = new Date(Date.UTC(y, m - 1, d));
+        return dt.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+      }
 
       // ── App config defaults (match the Mivtza Amek infographic) ──────────────
       // Config is stored in mivtza_config.config_json in Supabase so any device
@@ -339,6 +363,76 @@
           (sum, item) => sum + (entry[item.db_key] ? Number(item.points || 0) : 0), 0);
         const bonus = hanhagaCount * Number(c.hanhaga_bonus_per_item ?? 5);
         return learningTotal + bonus + teacherTotal;
+      }
+
+      // ── Live two-way sync helpers ────────────────────────────────────────
+      // Shared by CamperDashboard and TeacherPortal so "what's already been
+      // marked today" and "save my changes" behave identically everywhere.
+
+      // Fetches today's (or any date's) daily_entries row for one camper and
+      // merges it into a blank entry object, so checkboxes pre-check to match
+      // whatever is already saved — including items stored in the entry_data/
+      // teacher_data JSONB columns for custom config items.
+      async function fetchDailyEntry(camperId, date, cfg) {
+        const blank = getBlankEntry(cfg);
+        const { data: row } = await supabase
+          .from('daily_entries')
+          .select('*')
+          .eq('camper_id', camperId)
+          .eq('entry_date', date)
+          .maybeSingle();
+        if (!row) return blank;
+        const filled = { ...blank };
+        Object.keys(filled).forEach((k) => { if (row[k] !== undefined) filled[k] = row[k]; });
+        if (row.entry_data)   Object.entries(row.entry_data).forEach(([k, v]) => { filled[k] = v; });
+        if (row.teacher_data) Object.entries(row.teacher_data).forEach(([k, v]) => { filled[k] = v; });
+        return filled;
+      }
+
+      // Saves only the fields the current form actually edits (itemsToUpdate),
+      // via upsert — so re-saving updates the existing row instead of
+      // duplicating it, and other actors' columns on the same row (e.g. a
+      // camper's self-marked hanhagos vs a teacher's learning items) are left
+      // untouched since Supabase's upsert only writes the keys you pass.
+      //
+      // If saving would leave the ENTIRE day's row with nothing marked true
+      // anywhere — checked against every configured item, not just the
+      // current form's subset — the row is deleted outright instead of left
+      // behind as an empty husk. This is what makes unchecking every box and
+      // saving actually remove the entry rather than silently no-op.
+      async function saveDailyEntry({ camperId, date, itemsToUpdate, entryState, extraJsonField, allConfigItems }) {
+        const { data: existingRow } = await supabase
+          .from('daily_entries')
+          .select('*')
+          .eq('camper_id', camperId)
+          .eq('entry_date', date)
+          .maybeSingle();
+
+        const known = { camper_id: camperId, entry_date: date };
+        const extra = {};
+        itemsToUpdate.forEach((item) => {
+          const val = !!entryState[item.db_key];
+          if (KNOWN_ENTRY_COLUMNS.has(item.db_key)) known[item.db_key] = val;
+          else extra[item.db_key] = val;
+        });
+        if (Object.keys(extra).length) known[extraJsonField] = extra;
+
+        // Merge what the row would look like after this save on top of
+        // whatever already existed, so the "is everything empty" check
+        // considers the FULL row, not just this form's own fields.
+        const mergedKnown = { ...(existingRow || {}), ...known };
+        const mergedExtra = { ...(existingRow?.entry_data || {}), ...(existingRow?.teacher_data || {}), ...extra };
+        const anyTrueAnywhere = (allConfigItems || []).some((item) =>
+          KNOWN_ENTRY_COLUMNS.has(item.db_key) ? !!mergedKnown[item.db_key] : !!mergedExtra[item.db_key]
+        );
+
+        if (!anyTrueAnywhere) {
+          const { error } = await supabase.from('daily_entries').delete().eq('camper_id', camperId).eq('entry_date', date);
+          return { error, deleted: true };
+        }
+
+        const { error } = await supabase.from('daily_entries').upsert(known, { onConflict: 'camper_id,entry_date' });
+        return { error, deleted: false };
       }
 
       // Legacy aliases so nothing else breaks
@@ -983,21 +1077,16 @@
         const score = calculateScore(entry, appConfig);
 
         const submit = async () => {
-          // Split entry into known DB columns vs extra items stored as JSONB
-          const known = {}, extra = {};
-          Object.entries(entry).forEach(([k, v]) => {
-            if (KNOWN_ENTRY_COLUMNS.has(k)) known[k] = v; else extra[k] = v;
+          const allConfigItems = [...(appConfig.learning_items||[]), ...(appConfig.hanhaga_items||[]), ...(appConfig.teacher_items||[])];
+          const { error } = await saveDailyEntry({
+            camperId: camper.id,
+            date: today(),
+            itemsToUpdate: appConfig.hanhaga_items || [], // campers only mark hanhagos
+            entryState: entry,
+            extraJsonField: 'entry_data',
+            allConfigItems,
           });
-          // upsert (not insert) so that if the same camper submits again today
-          // on a different device, the new entry overwrites the old one instead
-          // of throwing a duplicate-key error.
-          const { error: insertError } = await supabase.from('daily_entries').upsert({
-            camper_id: camper.id,
-            entry_date: today(),
-            ...known,
-            ...(Object.keys(extra).length ? { entry_data: extra } : {}),
-          }, { onConflict: 'camper_id,entry_date' });
-          if (insertError) { toast.error(insertError.message); return; }
+          if (error) { toast.error(error.message); return; }
           setApproved(true);
           window.setTimeout(() => { setApproved(false); onLogout(); }, 2000);
         };
@@ -2280,6 +2369,7 @@
         const [selected, setSelected] = useState(null);
         const [date, setDate] = useState(today());
         const [entry, setEntry] = useState({});
+        const [loadingEntry, setLoadingEntry] = useState(false);
         const [nfcListening, setNfcListening] = useState(false);
         const [submitted, setSubmitted] = useState(false);
         const toast = useToast();
@@ -2308,7 +2398,27 @@
           });
         }, []);
 
-        const selectCamper = (c) => { setSelected(c); setEntry(getBlankEntry(appConfig)); setSubmitted(false); };
+        // Fetches whatever is already marked for this camper on the current
+        // date and pre-fills the checkboxes, so the teacher sees the true,
+        // current state instead of a blank form every time.
+        const loadEntryFor = async (camperId, forDate) => {
+          setLoadingEntry(true);
+          const filled = await fetchDailyEntry(camperId, forDate, appConfig);
+          setEntry(filled);
+          setLoadingEntry(false);
+        };
+
+        const selectCamper = (c) => {
+          setSelected(c);
+          setSubmitted(false);
+          loadEntryFor(c.id, date);
+        };
+
+        // If the teacher changes the date while a camper is already selected
+        // (e.g. backfilling yesterday), re-sync the checkboxes for that date.
+        useEffect(() => {
+          if (selected) loadEntryFor(selected.id, date);
+        }, [date]);
 
         const startNfc = async () => {
           if (!('NDEFReader' in window) || !window.isSecureContext) { toast.warning('NFC not available.'); return; }
@@ -2331,14 +2441,15 @@
 
         const submit = async () => {
           if (!selected) return;
-          // Split: known columns go direct, extras go to entry_data
-          const known = { camper_id: selected.id, entry_date: date }, extra = {};
-          [...(appConfig.learning_items||[]), ...(appConfig.hanhaga_items||[]), ...(appConfig.teacher_items||[])].forEach((item) => {
-            if (KNOWN_ENTRY_COLUMNS.has(item.db_key)) known[item.db_key] = entry[item.db_key] || false;
-            else extra[item.db_key] = entry[item.db_key] || false;
+          const allConfigItems = [...(appConfig.learning_items||[]), ...(appConfig.hanhaga_items||[]), ...(appConfig.teacher_items||[])];
+          const { error } = await saveDailyEntry({
+            camperId: selected.id,
+            date,
+            itemsToUpdate: [...(appConfig.learning_items||[]), ...(appConfig.teacher_items||[])], // teachers mark learning + teacher items, not hanhagos
+            entryState: entry,
+            extraJsonField: 'teacher_data',
+            allConfigItems,
           });
-          if (Object.keys(extra).length) known.teacher_data = extra;
-          const { error } = await supabase.from('daily_entries').upsert(known, { onConflict: 'camper_id,entry_date' });
           if (error) { toast.error(error.message); return; }
           setSubmitted(true);
           toast.success(`${selected.name} — saved ✓`);
@@ -2379,10 +2490,6 @@
                       {nfcListening ? 'Tap card…' : 'Scan Card'}
                     </button>
                   </div>
-                  <div className="mb-4">
-                    <label className="muted-text mb-1 block text-xs font-extrabold uppercase tracking-widest">Date</label>
-                    <input className="focus-ring rounded-lg border line-border bg-transparent px-3 py-2 font-bold w-full" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-                  </div>
                   {search && filteredCampers.length === 0 && <p className="muted-text text-sm font-semibold">No students found.</p>}
                   <div className="grid gap-2 max-h-80 overflow-y-auto">
                     {filteredCampers.map((c) => (
@@ -2395,13 +2502,57 @@
                 </div>
               ) : (
                 <div className="grid gap-4">
-                  <div className="lux-card rounded-xl p-5 shadow-luxury flex items-center justify-between">
-                    <div>
-                      <p className="text-xs font-extrabold uppercase tracking-widest opacity-70">Marking for</p>
-                      <p className="mt-1 text-2xl font-extrabold shimmer-text">{selected.name}</p>
-                      <p className="muted-text text-xs font-semibold mt-1">{date}</p>
+                  <div className="lux-card rounded-xl p-5 shadow-luxury">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-extrabold uppercase tracking-widest opacity-70">Marking for</p>
+                        <p className="mt-1 text-2xl font-extrabold shimmer-text">{selected.name}</p>
+                      </div>
+                      <button onClick={() => setSelected(null)} className="glass-panel focus-ring rounded-lg px-3 py-2 text-sm font-bold shrink-0"><X size={16} /></button>
                     </div>
-                    <button onClick={() => setSelected(null)} className="glass-panel focus-ring rounded-lg px-3 py-2 text-sm font-bold"><X size={16} /></button>
+
+                    {/* Date navigator — arrows shift ±1 day, which re-triggers
+                        the loadEntryFor effect below to re-fetch and re-fill
+                        checkboxes for the newly selected date. */}
+                    <div className="mt-4 flex items-center justify-center gap-2 border-t line-border pt-4">
+                      <button
+                        onClick={() => setDate((d) => shiftDate(d, -1))}
+                        disabled={loadingEntry}
+                        className="focus-ring flex h-9 w-9 shrink-0 items-center justify-center rounded-full glass-panel transition hover:scale-105 disabled:opacity-50"
+                        aria-label="Previous day"
+                      >
+                        <ChevronLeft size={18} />
+                      </button>
+
+                      <div className="flex min-w-[200px] items-center justify-center gap-2 text-center">
+                        <span className="text-sm font-extrabold">{formatDateHuman(date)}</span>
+                        {loadingEntry && <RefreshCw size={12} className="muted-text animate-spin shrink-0" />}
+                      </div>
+
+                      <button
+                        onClick={() => setDate((d) => shiftDate(d, 1))}
+                        disabled={loadingEntry}
+                        className="focus-ring flex h-9 w-9 shrink-0 items-center justify-center rounded-full glass-panel transition hover:scale-105 disabled:opacity-50"
+                        aria-label="Next day"
+                      >
+                        <ChevronRight size={18} />
+                      </button>
+
+                      {/* Hidden native date picker — jump across weeks/months
+                          without needing to tap the arrow dozens of times. */}
+                      <label
+                        className="focus-ring relative flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full glass-panel transition hover:scale-105"
+                        title="Jump to a specific date"
+                      >
+                        <CalendarDays size={15} />
+                        <input
+                          type="date"
+                          value={date}
+                          onChange={(e) => setDate(e.target.value)}
+                          className="absolute inset-0 cursor-pointer opacity-0"
+                        />
+                      </label>
+                    </div>
                   </div>
 
                   {/* Learning items */}
