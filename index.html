@@ -79,6 +79,12 @@
         --luxury-border: linear-gradient(120deg, #ffffff, #45484f, #f7f2df, #18191d, #ffffff);
       }
 
+      html, body {
+        overflow-x: hidden;
+        width: 100%;
+        max-width: 100vw;
+      }
+
       body {
         background:
           radial-gradient(circle at top left, var(--accent-soft), transparent 30rem),
@@ -86,6 +92,26 @@
         color: var(--text);
         min-height: 100vh;
         font-family: Inter, ui-sans-serif, system-ui;
+      }
+
+      #root {
+        width: 100%;
+        max-width: 100vw;
+        overflow-x: hidden;
+      }
+
+      /* Prevent any child element from forcing horizontal scroll on mobile —
+         flex/grid children can otherwise ignore their parent's width and push
+         the whole page wider than the viewport (e.g. a row that doesn't wrap
+         cleanly, or an element with an intrinsic min-width larger than the
+         screen). box-sizing ensures padding/border are included in width
+         calculations everywhere, and min-width: 0 lets flex children shrink
+         below their content size instead of overflowing. */
+      * {
+        box-sizing: border-box;
+      }
+      .flex, .grid {
+        min-width: 0;
       }
 
       .glass-panel {
@@ -582,7 +608,7 @@
             </div>
             {children}
             <div className="mx-auto mt-8 max-w-7xl px-1 text-center">
-              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V32</p>
+              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V33</p>
               <p className="muted-text mt-1 text-xs font-semibold opacity-60">Copyright 2026 HINENI SYSTEMS</p>
             </div>
           </main>
@@ -1463,8 +1489,8 @@
             <ToastStack toasts={toast.toasts} remove={toast.remove} />
             <h2 className="mb-1 flex items-center gap-2 text-xl font-extrabold"><KeyRound className="accent-text" /> Admin Cards</h2>
             <p className="muted-text mb-4 text-xs font-semibold">Synced to cloud — work on every device.</p>
-            <div className="flex gap-2 mb-3">
-              <label className="glass-panel flex flex-1 items-center gap-2 rounded px-3 py-2">
+            <div className="flex flex-wrap gap-2 mb-3">
+              <label className="glass-panel flex min-w-0 flex-1 items-center gap-2 rounded px-3 py-2">
                 <ScanLine size={16} className="muted-text shrink-0" />
                 <input
                   className="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none placeholder:font-medium font-mono"
@@ -1997,8 +2023,8 @@
                 <h2 className="mb-4 flex items-center gap-2 text-xl font-extrabold"><Plus className="accent-text" /> Register Camper</h2>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <TextInput icon={Users} placeholder="Camper name" value={newCamper.name} onChange={(e) => setNewCamper({ ...newCamper, name: e.target.value })} />
-                  <div className="flex gap-2">
-                    <label className="glass-panel flex flex-1 items-center gap-3 rounded px-3 py-2">
+                  <div className="flex flex-wrap gap-2">
+                    <label className="glass-panel flex min-w-0 flex-1 items-center gap-3 rounded px-3 py-2">
                       <ScanLine size={18} className="muted-text shrink-0" />
                       <input
                         className="focus-ring min-w-0 flex-1 bg-transparent py-2 text-sm font-semibold outline-none placeholder:font-medium font-mono"
@@ -2279,65 +2305,57 @@
         const [filter, setFilter] = useState('all'); // 'all' | 'missing'
         const [quickAdjustAmount, setQuickAdjustAmount] = useState('');
         const [adjusting, setAdjusting] = useState(false);
+        const [editingItem, setEditingItem] = useState(null); // { date, db_key } | null
+        const [editValue, setEditValue] = useState('');
+        const [backfillOpenDate, setBackfillOpenDate] = useState(null); // date string | null
 
-        useEffect(() => {
-          if (!camper) return;
+        const reloadEntries = () => {
           setLoading(true);
-          supabase.from('daily_entries').select('*').eq('camper_id', camper.id).then(({ data }) => {
+          return supabase.from('daily_entries').select('*').eq('camper_id', camper.id).then(({ data }) => {
             setEntries(data || []);
             setLoading(false);
           });
+        };
+
+        useEffect(() => {
+          if (!camper) return;
+          reloadEntries();
         }, [camper?.id]);
 
         if (!camper) return null;
 
+        // Re-fetches this one camper's full profile (total_points, weekly_points,
+        // card_status) from the camper_profiles view — the view recomputes these
+        // automatically from daily_entries, so any delete/edit/backfill just
+        // needs this refetch to reflect everywhere: modal header, roster,
+        // access-list tier columns. No manual point math needed on our end.
+        const refreshCamperTotals = async () => {
+          const { data } = await supabase.from(CAMPER_READ_TABLE).select('*').eq('id', camper.id).maybeSingle();
+          if (data) onAdjusted && onAdjusted(data);
+        };
+
         // ── Quick Points Adjustment ──────────────────────────────────────────
-        // Updates campers.manual_points_adjustment directly — the same running
-        // total already used everywhere else in the app (camper_profiles view
-        // adds it straight into total_points), so this stays perfectly
-        // consistent with the roster, access lists, and card tier math rather
-        // than introducing a second, separate ledger the rest of the app
-        // doesn't know about.
         const adjustPoints = async (delta) => {
           const pts = Number(quickAdjustAmount);
           if (!pts || pts <= 0) { toast.error('Enter a points amount greater than 0.'); return; }
           setAdjusting(true);
-          const currentManual = Number(camper.manual_points_adjustment || 0);
-          const nextManual = currentManual + (delta * pts);
-          const { data, error } = await supabase
-            .from(CAMPER_WRITE_TABLE)
-            .update({ manual_points_adjustment: nextManual })
-            .eq('id', camper.id)
-            .select()
-            .maybeSingle();
+          const nextManual = Number(camper.manual_points_adjustment || 0) + (delta * pts);
+          const { error } = await supabase.from(CAMPER_WRITE_TABLE).update({ manual_points_adjustment: nextManual }).eq('id', camper.id);
           setAdjusting(false);
           if (error) { toast.error(`Failed: ${error.message}`); return; }
           toast.success(`${delta > 0 ? '+' : '-'}${pts} pts applied to ${camper.name} ✓`);
           setQuickAdjustAmount('');
-          // Reflect the new total instantly in the modal + roster without a
-          // page reload — total_points/manual_points_adjustment both bumped
-          // optimistically here, then load() (triggered by the parent's
-          // onAdjusted) quietly re-syncs everything from the source of truth.
-          const updatedCamper = {
-            ...camper,
-            manual_points_adjustment: nextManual,
-            total_points: (Number(camper.total_points) || 0) + (delta * pts),
-          };
-          onAdjusted && onAdjusted(updatedCamper);
+          refreshCamperTotals();
         };
 
         const allItems = [...(appConfig.learning_items||[]), ...(appConfig.hanhaga_items||[]), ...(appConfig.teacher_items||[])];
 
-        // Index entries by date for quick lookup
         const entryByDate = {};
         entries.forEach((row) => { entryByDate[row.entry_date] = row; });
 
-        // The "active camp range" — uses the configured competition period if
-        // set, otherwise falls back to a rolling 14-day window so the audit
-        // is still useful before an admin sets explicit period dates.
         const rangeStart = periodStart || shiftDate(today(), -13);
         const rangeEnd = periodEnd || today();
-        const allDates = enumerateDateRange(rangeStart, rangeEnd).reverse(); // newest first
+        const allDates = enumerateDateRange(rangeStart, rangeEnd).reverse();
 
         const checkedItemsFor = (row) => {
           if (!row) return [];
@@ -2345,9 +2363,82 @@
           return allItems.filter((item) => !!flat[item.db_key]);
         };
 
-        const visibleDates = filter === 'missing'
-          ? allDates.filter((d) => !entryByDate[d])
-          : allDates;
+        const visibleDates = filter === 'missing' ? allDates.filter((d) => !entryByDate[d]) : allDates;
+
+        // ── Delete one logged item for one date ─────────────────────────────
+        // There's no separate row-per-item in this schema — each date has ONE
+        // daily_entries row with a boolean column per item. "Deleting a log"
+        // means unchecking that column for this date, then deleting the whole
+        // row if that leaves nothing else marked (mirrors the same safe
+        // pattern used everywhere else in the app for consistency).
+        const deleteLogItem = async (dateStr, item) => {
+          if (!window.confirm('Are you sure you want to delete this log entry?')) return;
+          const row = entryByDate[dateStr];
+          if (!row) return;
+
+          const known = { camper_id: camper.id, entry_date: dateStr };
+          const extraEntry = { ...(row.entry_data || {}) };
+          const extraTeacher = { ...(row.teacher_data || {}) };
+
+          if (KNOWN_ENTRY_COLUMNS.has(item.db_key)) known[item.db_key] = false;
+          else if (item.db_key in extraEntry) extraEntry[item.db_key] = false;
+          else if (item.db_key in extraTeacher) extraTeacher[item.db_key] = false;
+
+          const flatCheck = { ...row, ...known, ...extraEntry, ...extraTeacher };
+          const stillAnyTrue = allItems.some((i) => !!flatCheck[i.db_key]);
+
+          let error;
+          if (!stillAnyTrue) {
+            ({ error } = await supabase.from('daily_entries').delete().eq('camper_id', camper.id).eq('entry_date', dateStr));
+          } else {
+            const payload = { ...known };
+            if (Object.keys(extraEntry).length) payload.entry_data = extraEntry;
+            if (Object.keys(extraTeacher).length) payload.teacher_data = extraTeacher;
+            ({ error } = await supabase.from('daily_entries').upsert(payload, { onConflict: 'camper_id,entry_date' }));
+          }
+          if (error) { toast.error(error.message); return; }
+          toast.success('Log entry deleted ✓');
+          reloadEntries();
+          refreshCamperTotals();
+        };
+
+        // ── Edit an item's point contribution ───────────────────────────────
+        // Points-per-item are fixed by the shared app configuration, not
+        // stored per log entry — there's no individual "this Chumash was
+        // worth 20pts" row to rewrite. So "editing" applies the difference
+        // between the new value and the item's normal point value as a
+        // manual credit adjustment on the camper (the same field the Quick
+        // Points widget above uses), which is the only per-camper point
+        // override the schema actually supports. The result is genuinely
+        // reflected in their total — just via that shared adjustment field
+        // rather than a rewritten per-item number.
+        const saveItemPointEdit = async (item) => {
+          const newValue = Number(editValue);
+          if (isNaN(newValue)) { toast.error('Enter a valid number.'); return; }
+          const delta = newValue - Number(item.points || 0);
+          if (delta === 0) { setEditingItem(null); return; }
+          const nextManual = Number(camper.manual_points_adjustment || 0) + delta;
+          const { error } = await supabase.from(CAMPER_WRITE_TABLE).update({ manual_points_adjustment: nextManual }).eq('id', camper.id);
+          if (error) { toast.error(error.message); return; }
+          toast.success(`Adjusted by ${delta > 0 ? '+' : ''}${delta} pts ✓`);
+          setEditingItem(null);
+          refreshCamperTotals();
+        };
+
+        // ── Backfill a missing day ───────────────────────────────────────────
+        const backfillItem = async (dateStr, item) => {
+          const row = entryByDate[dateStr];
+          const payload = { camper_id: camper.id, entry_date: dateStr };
+          if (KNOWN_ENTRY_COLUMNS.has(item.db_key)) payload[item.db_key] = true;
+          else payload.entry_data = { ...(row?.entry_data || {}), [item.db_key]: true };
+
+          const { error } = await supabase.from('daily_entries').upsert(payload, { onConflict: 'camper_id,entry_date' });
+          if (error) { toast.error(error.message); return; }
+          toast.success(`${item.label} backfilled for ${formatDateHuman(dateStr)} ✓`);
+          setBackfillOpenDate(null);
+          reloadEntries();
+          refreshCamperTotals();
+        };
 
         return (
           <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 backdrop-blur-md p-4">
@@ -2425,21 +2516,89 @@
                   {!loading && visibleDates.map((d) => {
                     const row = entryByDate[d];
                     const checked = checkedItemsFor(row);
+                    const isBackfillOpen = backfillOpenDate === d;
                     return (
                       <div key={d}>
                         <p className="mb-2 text-xs font-extrabold uppercase tracking-widest opacity-70">{formatDateHuman(d)}</p>
                         {checked.length > 0 ? (
                           <div className="grid gap-1.5">
-                            {checked.map((item) => (
-                              <div key={item.db_key} className="glass-panel flex items-center justify-between rounded-lg px-3 py-2">
-                                <span className="text-sm font-semibold">{item.label}</span>
-                                {item.points ? <span className="accent-text text-xs font-extrabold">+{item.points}pts</span> : <Check size={14} className="text-green-500" />}
-                              </div>
-                            ))}
+                            {checked.map((item) => {
+                              const isEditing = editingItem?.date === d && editingItem?.db_key === item.db_key;
+                              return (
+                                <div key={item.db_key} className="glass-panel flex items-center justify-between gap-2 rounded-lg px-3 py-2">
+                                  {isEditing ? (
+                                    <>
+                                      <span className="text-sm font-semibold">{item.label}</span>
+                                      <div className="flex items-center gap-1">
+                                        <input
+                                          autoFocus
+                                          type="number"
+                                          className="w-16 rounded border line-border bg-transparent px-2 py-1 text-center text-xs font-bold outline-none"
+                                          value={editValue}
+                                          onChange={(e) => setEditValue(e.target.value)}
+                                          onKeyDown={(e) => e.key === 'Enter' && saveItemPointEdit(item)}
+                                        />
+                                        <button onClick={() => saveItemPointEdit(item)} className="focus-ring rounded p-1 text-green-500 hover:scale-110" title="Save"><Check size={14} /></button>
+                                        <button onClick={() => setEditingItem(null)} className="focus-ring rounded p-1 muted-text hover:scale-110" title="Cancel"><X size={14} /></button>
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <span className="text-sm font-semibold">{item.label}</span>
+                                      <div className="flex items-center gap-2">
+                                        {item.points ? <span className="accent-text text-xs font-extrabold">+{item.points}pts</span> : <Check size={14} className="text-green-500" />}
+                                        <button
+                                          onClick={() => { setEditingItem({ date: d, db_key: item.db_key }); setEditValue(String(item.points ?? 0)); }}
+                                          className="focus-ring rounded p-1 muted-text hover:scale-110 hover:accent-text"
+                                          title="Edit points"
+                                        >
+                                          <PencilLine size={13} />
+                                        </button>
+                                        <button
+                                          onClick={() => deleteLogItem(d, item)}
+                                          className="focus-ring rounded p-1 text-red-500 hover:scale-110"
+                                          title="Delete this log entry"
+                                        >
+                                          <Trash2 size={13} />
+                                        </button>
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                         ) : (
-                          <div className="rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-2 text-sm font-bold text-red-500">
-                            ⚠ No marks recorded
+                          <div className="grid gap-2">
+                            <div className="rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-2 text-sm font-bold text-red-500">
+                              ⚠ No marks recorded
+                            </div>
+                            {!isBackfillOpen ? (
+                              <button
+                                onClick={() => setBackfillOpenDate(d)}
+                                className="focus-ring inline-flex w-fit items-center gap-1 rounded-lg px-2 py-1 text-xs font-extrabold accent-text hover:underline"
+                              >
+                                <Plus size={13} /> Backfill Entry
+                              </button>
+                            ) : (
+                              <div className="glass-panel rounded-lg p-3">
+                                <div className="mb-2 flex items-center justify-between">
+                                  <p className="muted-text text-xs font-extrabold uppercase tracking-widest">Select item to backfill</p>
+                                  <button onClick={() => setBackfillOpenDate(null)} className="focus-ring rounded p-0.5"><X size={13} /></button>
+                                </div>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {allItems.map((item) => (
+                                    <button
+                                      key={item.db_key}
+                                      onClick={() => backfillItem(d, item)}
+                                      className="focus-ring rounded-full border line-border px-3 py-1 text-xs font-bold transition hover:accent-bg"
+                                    >
+                                      {item.label}{item.points ? ` · ${item.points}pts` : ''}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -2731,13 +2890,13 @@
               {!selected ? (
                 <div className="glass-panel rounded-xl p-6 shadow-luxury">
                   <h2 className="mb-4 text-lg font-extrabold">Find a Student</h2>
-                  <div className="flex gap-2 mb-4">
-                    <label className="glass-panel flex flex-1 items-center gap-2 rounded-lg px-4 py-3">
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    <label className="glass-panel flex min-w-0 flex-1 items-center gap-2 rounded-lg px-4 py-3">
                       <ScanLine size={18} className="muted-text shrink-0" />
-                      <input autoFocus className="flex-1 bg-transparent font-semibold outline-none" placeholder="Type name…" value={search} onChange={(e) => setSearch(e.target.value)} />
+                      <input autoFocus className="min-w-0 flex-1 bg-transparent font-semibold outline-none" placeholder="Type name…" value={search} onChange={(e) => setSearch(e.target.value)} />
                       {search && <button onClick={() => setSearch('')}><X size={14} /></button>}
                     </label>
-                    <button onClick={startNfc} disabled={nfcListening} className="lux-card focus-ring inline-flex items-center gap-2 rounded-lg px-4 py-3 font-extrabold disabled:opacity-70">
+                    <button onClick={startNfc} disabled={nfcListening} className="lux-card focus-ring inline-flex shrink-0 items-center gap-2 rounded-lg px-4 py-3 font-extrabold disabled:opacity-70">
                       {nfcListening ? <RefreshCw size={16} className="animate-spin" /> : <Smartphone size={16} />}
                       {nfcListening ? 'Tap card…' : 'Scan Card'}
                     </button>
@@ -3011,9 +3170,9 @@
                     <input className="flex-1 bg-transparent font-extrabold outline-none text-base border-b line-border pb-1" placeholder="Club name (e.g. Chitas Club)" value={club.name} onChange={(e) => updateClub(idx,'name',e.target.value)} onBlur={() => persist([...clubs])} />
                     <button onClick={() => removeClub(idx)} className="text-red-500"><Trash2 size={15}/></button>
                   </div>
-                  <div className="flex gap-2 items-center">
-                    <input className="flex-1 bg-transparent text-xs font-mono outline-none border-b line-border pb-1 muted-text" placeholder="Operator card NFC ID" value={club.nfc_id} onChange={(e) => updateClub(idx,'nfc_id',e.target.value)} onBlur={() => persist([...clubs])} />
-                    <button onClick={() => scanForClub(idx)} disabled={listening === idx} className="lux-card focus-ring inline-flex items-center gap-1 rounded px-3 py-1.5 text-xs font-extrabold disabled:opacity-70">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input className="min-w-0 flex-1 bg-transparent text-xs font-mono outline-none border-b line-border pb-1 muted-text" placeholder="Operator card NFC ID" value={club.nfc_id} onChange={(e) => updateClub(idx,'nfc_id',e.target.value)} onBlur={() => persist([...clubs])} />
+                    <button onClick={() => scanForClub(idx)} disabled={listening === idx} className="lux-card focus-ring inline-flex shrink-0 items-center gap-1 rounded px-3 py-1.5 text-xs font-extrabold disabled:opacity-70">
                       {listening === idx ? <RefreshCw size={12} className="animate-spin"/> : <Smartphone size={12}/>}
                       {listening === idx ? 'Tap…' : 'Scan'}
                     </button>
