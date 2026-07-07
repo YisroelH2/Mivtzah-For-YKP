@@ -616,7 +616,7 @@
             </div>
             {children}
             <div className="mx-auto mt-8 max-w-7xl px-1 text-center">
-              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V36</p>
+              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V37</p>
               <p className="muted-text mt-1 text-xs font-semibold opacity-60">Copyright 2026 HINENI SYSTEMS</p>
             </div>
           </main>
@@ -2569,7 +2569,9 @@
           const { error } = await supabase.from('daily_entries').upsert(payload, { onConflict: 'camper_id,entry_date' });
           if (error) { toast.error(error.message); return; }
           toast.success(`${item.label} backfilled for ${formatDateHuman(dateStr)} ✓`);
-          setBackfillOpenDate(null);
+          // Deliberately NOT closing the picker here — an admin should be
+          // able to click Chumash, then Tanya, then Rambam for the same day
+          // without the dropdown vanishing after every single click.
           reloadEntries();
           refreshCamperTotals();
         };
@@ -2651,11 +2653,16 @@
                     const row = entryByDate[d];
                     const checked = checkedItemsFor(row);
                     const isBackfillOpen = backfillOpenDate === d;
+                    // Only offer items not already checked today — avoids a
+                    // confusing "add" option for something already logged.
+                    const availableToAdd = allItems.filter((item) => !checked.some((c) => c.db_key === item.db_key));
                     return (
                       <div key={d}>
                         <p className="mb-2 text-xs font-extrabold uppercase tracking-widest opacity-70">{formatDateHuman(d)}</p>
-                        {checked.length > 0 ? (
-                          <div className="grid gap-1.5">
+
+                        {/* Checked items — only rendered when there's at least one */}
+                        {checked.length > 0 && (
+                          <div className="mb-2 grid gap-1.5">
                             {checked.map((item) => {
                               const isEditing = editingItem?.date === d && editingItem?.db_key === item.db_key;
                               return (
@@ -2702,37 +2709,46 @@
                               );
                             })}
                           </div>
+                        )}
+
+                        {/* Empty-state banner — only when truly zero items marked */}
+                        {checked.length === 0 && (
+                          <div className="mb-2 rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-2 text-sm font-bold text-red-500">
+                            ⚠ No marks recorded
+                          </div>
+                        )}
+
+                        {/* Persistent "+ Add Item to Date" — always present,
+                            regardless of whether this day already has marks. */}
+                        {!isBackfillOpen ? (
+                          availableToAdd.length > 0 && (
+                            <button
+                              onClick={() => setBackfillOpenDate(d)}
+                              className="focus-ring inline-flex w-fit items-center gap-1 rounded-lg px-2 py-1 text-xs font-extrabold accent-text hover:underline"
+                            >
+                              <Plus size={13} /> Add Item to Date
+                            </button>
+                          )
                         ) : (
-                          <div className="grid gap-2">
-                            <div className="rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-2 text-sm font-bold text-red-500">
-                              ⚠ No marks recorded
+                          <div className="glass-panel rounded-lg p-3">
+                            <div className="mb-2 flex items-center justify-between">
+                              <p className="muted-text text-xs font-extrabold uppercase tracking-widest">Select item to add</p>
+                              <button onClick={() => setBackfillOpenDate(null)} className="focus-ring rounded p-0.5"><X size={13} /></button>
                             </div>
-                            {!isBackfillOpen ? (
-                              <button
-                                onClick={() => setBackfillOpenDate(d)}
-                                className="focus-ring inline-flex w-fit items-center gap-1 rounded-lg px-2 py-1 text-xs font-extrabold accent-text hover:underline"
-                              >
-                                <Plus size={13} /> Backfill Entry
-                              </button>
-                            ) : (
-                              <div className="glass-panel rounded-lg p-3">
-                                <div className="mb-2 flex items-center justify-between">
-                                  <p className="muted-text text-xs font-extrabold uppercase tracking-widest">Select item to backfill</p>
-                                  <button onClick={() => setBackfillOpenDate(null)} className="focus-ring rounded p-0.5"><X size={13} /></button>
-                                </div>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {allItems.map((item) => (
-                                    <button
-                                      key={item.db_key}
-                                      onClick={() => backfillItem(d, item)}
-                                      className="focus-ring rounded-full border line-border px-3 py-1 text-xs font-bold transition hover:accent-bg"
-                                    >
-                                      {item.label}{item.points ? ` · ${item.points}pts` : ''}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
+                            <div className="flex flex-wrap gap-1.5">
+                              {availableToAdd.length === 0 && (
+                                <p className="muted-text text-xs font-semibold">All items already logged for this day ✓</p>
+                              )}
+                              {availableToAdd.map((item) => (
+                                <button
+                                  key={item.db_key}
+                                  onClick={() => backfillItem(d, item)}
+                                  className="focus-ring rounded-full border line-border px-3 py-1 text-xs font-bold transition hover:accent-bg"
+                                >
+                                  {item.label}{item.points ? ` · ${item.points}pts` : ''}
+                                </button>
+                              ))}
+                            </div>
                           </div>
                         )}
                       </div>
