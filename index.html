@@ -403,6 +403,21 @@
         return Math.round((t - s) / 86400000);
       }
 
+      // Inclusive list of 'YYYY-MM-DD' strings from start to end. Plain string
+      // comparison works correctly for this format. Capped at 400 iterations
+      // as a safety guard against a malformed/reversed range looping forever.
+      function enumerateDateRange(startStr, endStr) {
+        const dates = [];
+        let cur = startStr;
+        let guard = 0;
+        while (cur <= endStr && guard < 400) {
+          dates.push(cur);
+          cur = shiftDate(cur, 1);
+          guard++;
+        }
+        return dates;
+      }
+
       // Saves only the fields the current form actually edits (itemsToUpdate),
       // via upsert — so re-saving updates the existing row instead of
       // duplicating it, and other actors' columns on the same row (e.g. a
@@ -566,7 +581,7 @@
               </div>
             </div>
             {children}
-            <p className="muted-text mx-auto mt-8 max-w-7xl px-1 text-center text-[10px] font-semibold tracking-widest opacity-40">V31</p>
+            <p className="muted-text mx-auto mt-8 max-w-7xl px-1 text-center text-[10px] font-semibold tracking-widest opacity-40">V32</p>
           </main>
         );
       }
@@ -1654,6 +1669,8 @@
         const [periodEnd, setPeriodEnd] = useState('');
         const [loading, setLoading] = useState(true);
         const [rosterSearch, setRosterSearch] = useState('');
+        const [accessSearch, setAccessSearch] = useState('');
+        const [historyCamper, setHistoryCamper] = useState(null);
 
         // Registration state
         const [newCamper, setNewCamper] = useState({ name: '', nfc_id: '' });
@@ -1971,11 +1988,35 @@
                 </div>
               </section>
 
-              <section className="grid gap-4 lg:grid-cols-3">
-                <AccessList title="VIP Event Access" icon={Sparkles} campers={vip} />
-                <AccessList title="Standard Event Access" icon={BadgeCheck} campers={standard} />
-                <AccessList title="Not Eligible" icon={X} campers={notEligible} />
+              {/* ── Global student search for the three access columns ── */}
+              <section className="glass-panel rounded-lg p-4">
+                <label className="flex items-center gap-3 rounded-lg px-2 py-1">
+                  <ScanLine size={18} className="accent-text shrink-0" />
+                  <input
+                    className="w-full bg-transparent text-base font-semibold outline-none placeholder:font-medium"
+                    placeholder="Search students across VIP, Standard, and Not Eligible…"
+                    value={accessSearch}
+                    onChange={(e) => setAccessSearch(e.target.value)}
+                  />
+                  {accessSearch && <button onClick={() => setAccessSearch('')} className="shrink-0"><X size={16} /></button>}
+                </label>
               </section>
+
+              <section className="grid gap-4 lg:grid-cols-3">
+                <AccessList title="VIP Event Access" icon={Sparkles} campers={vip.filter((c) => !accessSearch || c.name?.toLowerCase().includes(accessSearch.toLowerCase()))} onSelect={setHistoryCamper} />
+                <AccessList title="Standard Event Access" icon={BadgeCheck} campers={standard.filter((c) => !accessSearch || c.name?.toLowerCase().includes(accessSearch.toLowerCase()))} onSelect={setHistoryCamper} />
+                <AccessList title="Not Eligible" icon={X} campers={notEligible.filter((c) => !accessSearch || c.name?.toLowerCase().includes(accessSearch.toLowerCase()))} onSelect={setHistoryCamper} />
+              </section>
+
+              {historyCamper && (
+                <CamperHistoryModal
+                  camper={historyCamper}
+                  appConfig={appConfig}
+                  periodStart={periodStart}
+                  periodEnd={periodEnd}
+                  onClose={() => setHistoryCamper(null)}
+                />
+              )}
 
               {/* ── Register Camper ── */}
               <section className="glass-panel rounded-lg p-5">
@@ -2290,18 +2331,148 @@
         );
       }
 
-      function AccessList({ title, icon: Icon, campers }) {
+      function AccessList({ title, icon: Icon, campers, onSelect }) {
         return (
           <div className="glass-panel rounded-lg p-5">
             <h2 className="mb-4 flex items-center gap-2 text-lg font-extrabold"><Icon className="accent-text" /> {title}</h2>
             <div className="grid gap-2">
               {campers.length === 0 && <p className="muted-text text-sm font-semibold">No campers in this group.</p>}
               {campers.map((camper) => (
-                <div key={camper.id} className="flex items-center justify-between rounded border line-border px-3 py-2">
+                <button
+                  key={camper.id}
+                  onClick={() => onSelect && onSelect(camper)}
+                  className="focus-ring flex w-full items-center justify-between rounded border line-border px-3 py-2 text-left transition hover:scale-[1.01] hover:accent-bg"
+                >
                   <span className="font-bold">{camper.name}</span>
                   <span className="muted-text text-sm font-semibold">{displayValue(camper.weekly_points)} pts</span>
-                </div>
+                </button>
               ))}
+            </div>
+          </div>
+        );
+      }
+
+      // ── Camper History Audit Modal ───────────────────────────────────────
+      function tierBadgeClass(status) {
+        const s = normalizeStatus(status);
+        if (s === 'Black') return 'bg-black text-white border border-white/30';
+        if (s === 'Platinum') return 'bg-slate-300 text-slate-900 border border-slate-400';
+        return 'bg-amber-400 text-amber-950 border border-amber-500'; // Gold
+      }
+
+      function CamperHistoryModal({ camper, appConfig, periodStart, periodEnd, onClose }) {
+        const [entries, setEntries] = useState([]);
+        const [loading, setLoading] = useState(true);
+        const [filter, setFilter] = useState('all'); // 'all' | 'missing'
+
+        useEffect(() => {
+          if (!camper) return;
+          setLoading(true);
+          supabase.from('daily_entries').select('*').eq('camper_id', camper.id).then(({ data }) => {
+            setEntries(data || []);
+            setLoading(false);
+          });
+        }, [camper?.id]);
+
+        if (!camper) return null;
+
+        const allItems = [...(appConfig.learning_items||[]), ...(appConfig.hanhaga_items||[]), ...(appConfig.teacher_items||[])];
+
+        // Index entries by date for quick lookup
+        const entryByDate = {};
+        entries.forEach((row) => { entryByDate[row.entry_date] = row; });
+
+        // The "active camp range" — uses the configured competition period if
+        // set, otherwise falls back to a rolling 14-day window so the audit
+        // is still useful before an admin sets explicit period dates.
+        const rangeStart = periodStart || shiftDate(today(), -13);
+        const rangeEnd = periodEnd || today();
+        const allDates = enumerateDateRange(rangeStart, rangeEnd).reverse(); // newest first
+
+        const checkedItemsFor = (row) => {
+          if (!row) return [];
+          const flat = { ...row, ...(row.entry_data || {}), ...(row.teacher_data || {}) };
+          return allItems.filter((item) => !!flat[item.db_key]);
+        };
+
+        const visibleDates = filter === 'missing'
+          ? allDates.filter((d) => !entryByDate[d])
+          : allDates;
+
+        return (
+          <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 backdrop-blur-md p-4">
+            <div className="glass-panel flex max-h-[85vh] w-full max-w-lg flex-col rounded-2xl shadow-luxury">
+              {/* Header */}
+              <div className="flex items-start justify-between gap-3 border-b line-border p-5">
+                <div className="min-w-0">
+                  <h2 className="truncate text-2xl font-extrabold shimmer-text">{camper.name}</h2>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <span className={`rounded-full px-3 py-1 text-xs font-extrabold uppercase tracking-wide ${tierBadgeClass(camper.card_status)}`}>
+                      {normalizeStatus(camper.card_status)}
+                    </span>
+                    <span className="muted-text text-sm font-semibold">{displayValue(camper.total_points)} total pts</span>
+                  </div>
+                </div>
+                <button onClick={onClose} className="focus-ring glass-panel shrink-0 rounded-lg p-2 hover:scale-105" aria-label="Close">
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Filter pills */}
+              <div className="flex gap-2 border-b line-border p-4">
+                <button
+                  onClick={() => setFilter('all')}
+                  className={classNames('focus-ring rounded-full px-4 py-1.5 text-xs font-extrabold transition', filter === 'all' ? 'app-button' : 'glass-panel')}
+                >
+                  Show All Logs
+                </button>
+                <button
+                  onClick={() => setFilter('missing')}
+                  className={classNames('focus-ring rounded-full px-4 py-1.5 text-xs font-extrabold transition', filter === 'missing' ? 'app-button' : 'glass-panel')}
+                >
+                  Show Missing Days Only
+                </button>
+              </div>
+
+              {/* Timeline */}
+              <div className="flex-1 overflow-y-auto p-5">
+                {loading && <p className="muted-text text-sm font-semibold">Loading history…</p>}
+                {!loading && visibleDates.length === 0 && (
+                  <p className="muted-text text-sm font-semibold">
+                    {filter === 'missing' ? 'No missing days in this range ✓' : 'No dates in range.'}
+                  </p>
+                )}
+                <div className="grid gap-4">
+                  {!loading && visibleDates.map((d) => {
+                    const row = entryByDate[d];
+                    const checked = checkedItemsFor(row);
+                    return (
+                      <div key={d}>
+                        <p className="mb-2 text-xs font-extrabold uppercase tracking-widest opacity-70">{formatDateHuman(d)}</p>
+                        {checked.length > 0 ? (
+                          <div className="grid gap-1.5">
+                            {checked.map((item) => (
+                              <div key={item.db_key} className="glass-panel flex items-center justify-between rounded-lg px-3 py-2">
+                                <span className="text-sm font-semibold">{item.label}</span>
+                                {item.points ? <span className="accent-text text-xs font-extrabold">+{item.points}pts</span> : <Check size={14} className="text-green-500" />}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-2 text-sm font-bold text-red-500">
+                            ⚠ No marks recorded
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Close footer */}
+              <div className="border-t line-border p-4">
+                <button onClick={onClose} className="app-button focus-ring w-full rounded-lg px-5 py-3 font-extrabold">Close</button>
+              </div>
             </div>
           </div>
         );
