@@ -616,7 +616,7 @@
             </div>
             {children}
             <div className="mx-auto mt-8 max-w-7xl px-1 text-center">
-              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V38</p>
+              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V40</p>
               <p className="muted-text mt-1 text-xs font-semibold opacity-60">Copyright 2026 HINENI SYSTEMS</p>
             </div>
           </main>
@@ -2198,9 +2198,6 @@
               {/* ── Bulk Import ── */}
               <BulkImportPanel campers={campers} onDone={load} />
 
-              {/* ── Club Portals ── */}
-              <ClubCardsPanel appConfig={appConfig} />
-
               {/* ── Structured App Configuration ── */}
               <section className="glass-panel rounded-lg p-5">
                 <h2 className="mb-1 flex items-center gap-2 text-xl font-extrabold"><Gauge className="accent-text" /> App Configuration</h2>
@@ -3178,7 +3175,12 @@
         const CLUB_NAME = 'Chitas Club';
         const [checking, setChecking] = useState(true);
         const [locked, setLocked] = useState(false);
-        const [clubItems, setClubItems] = useState([]); // [{db_key,label,points}] — pulled from admin's Club Portal config
+        // Every learning item, each carrying its own live `checked` flag for
+        // this session — defaults from the previously-configured active set,
+        // but the teacher can freely toggle any of them right on this screen
+        // before/during scanning. This (not the global config) is what
+        // actually gets submitted — see submitSession below.
+        const [sessionItems, setSessionItems] = useState([]); // [{db_key,label,points,checked}]
         const [allCampers, setAllCampers] = useState([]);
         const [sessionQueue, setSessionQueue] = useState([]);
         const [scanning, setScanning] = useState(false);
@@ -3203,17 +3205,27 @@
 
             let cfg = DEFAULT_CONFIG;
             if (cfgRow?.config_json) try { cfg = JSON.parse(cfgRow.config_json); } catch {}
-            const allConfigItems = [...(cfg.learning_items||[]), ...(cfg.hanhaga_items||[]), ...(cfg.teacher_items||[])];
 
+            // The previously-configured "active by default" set (from the old
+            // admin Club Portals panel) still lives in mivtza_config.club_cards
+            // even though that admin UI is gone — we just read it here as the
+            // starting point for this session's checklist, not as a fixed rule.
             let clubs = [];
             try { clubs = JSON.parse(cfgRow?.club_cards || '[]'); } catch {}
             const match = clubs.find((c) => (c.name || '').trim().toLowerCase() === CLUB_NAME.toLowerCase());
             const activeKeys = match?.items || [];
-            setClubItems(allConfigItems.filter((i) => activeKeys.includes(i.db_key)));
+
+            setSessionItems(
+              (cfg.learning_items || []).map((item) => ({ ...item, checked: activeKeys.includes(item.db_key) }))
+            );
 
             setChecking(false);
           })();
         }, []);
+
+        const toggleSessionItem = (dbKey) => {
+          setSessionItems((items) => items.map((i) => i.db_key === dbKey ? { ...i, checked: !i.checked } : i));
+        };
 
         const addToQueue = (camper) => {
           if (queueIdsRef.current.has(camper.id)) {
@@ -3262,14 +3274,19 @@
         const submitSession = async () => {
           if (locked) return;
           if (sessionQueue.length === 0) { toast.error('Queue is empty — scan at least one camper first.'); return; }
-          if (clubItems.length === 0) { toast.error('No tracking items are configured for Chitas Club yet — set this up in Admin → Setup → Club Portals.'); return; }
+
+          // Read the LIVE checkbox states right now, not the config default —
+          // this is what makes unchecking Tanya on this screen actually skip
+          // it for this specific session's submission.
+          const activeItems = sessionItems.filter((i) => i.checked);
+          if (activeItems.length === 0) { toast.error('No items are checked for this session — select at least one item to credit above.'); return; }
 
           setSubmitting(true);
           let ok = 0, fail = 0;
           for (const camper of sessionQueue) {
             const payload = { camper_id: camper.id, entry_date: today() };
             const extra = {};
-            clubItems.forEach((item) => {
+            activeItems.forEach((item) => {
               if (KNOWN_ENTRY_COLUMNS.has(item.db_key)) payload[item.db_key] = true;
               else extra[item.db_key] = true;
             });
@@ -3280,11 +3297,19 @@
 
           // Proof-of-run row — this is what the lock-check at the top of this
           // component queries for, so double submissions the same day are
-          // blocked automatically from here on.
+          // blocked automatically from here on. camper_count is explicitly
+          // coerced to a base-10 integer via parseInt — sessionQueue.length is
+          // already a real JS number, but this guards against Postgrest
+          // schema-cache mismatches some Supabase projects hit when a column
+          // was added after the API's schema was last cached (that specific
+          // error is fixed by running `NOTIFY pgrst, 'reload schema';` in the
+          // SQL editor, or waiting ~60s for it to auto-refresh — this
+          // conversion just ensures the value we send is always unambiguous).
+          const campersCredited = parseInt(sessionQueue.length, 10) || 0;
           const { error: eventError } = await supabase.from('events').insert({
             club_name: CLUB_NAME,
             submission_date: today(),
-            camper_count: sessionQueue.length,
+            camper_count: campersCredited,
           });
 
           setSubmitting(false);
@@ -3306,7 +3331,7 @@
                 <p className="accent-text text-sm font-extrabold uppercase tracking-[0.2em]">Chitas Club</p>
                 <h1 className="mt-1 text-3xl font-extrabold">Event Attendance Scanner</h1>
                 <p className="muted-text mt-1 text-sm font-semibold">
-                  {clubItems.length > 0 ? `Credits: ${clubItems.map((i) => i.label).join(', ')}` : 'No items configured yet.'}
+                  Check off what this session actually covered before scanning.
                 </p>
               </div>
               <button onClick={onBack} className="glass-panel focus-ring shrink-0 rounded-lg px-3 py-2 text-sm font-bold">
@@ -3324,6 +3349,35 @@
 
             {!checking && (
               <div className="grid gap-4">
+                {/* Items to Credit This Session — live, per-session override.
+                    Defaults come from the last-configured active set, but the
+                    teacher can freely toggle any of these right here, right
+                    now, and submitSession() reads THIS state, not the config. */}
+                <div className="glass-panel rounded-xl p-5">
+                  <h2 className="mb-1 font-extrabold">Items to Credit This Session</h2>
+                  <p className="muted-text mb-3 text-xs font-semibold">Uncheck anything the club didn't get to today — this only affects this session.</p>
+                  {sessionItems.length === 0 && <p className="muted-text text-sm font-semibold">No learning items configured in App Configuration yet.</p>}
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {sessionItems.map((item) => (
+                      <button
+                        key={item.db_key}
+                        type="button"
+                        onClick={() => toggleSessionItem(item.db_key)}
+                        disabled={locked}
+                        className={classNames(
+                          'focus-ring flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-40',
+                          item.checked ? 'accent-bg line-border shadow-glow' : 'glass-panel'
+                        )}
+                      >
+                        <span className={classNames('flex h-5 w-5 shrink-0 items-center justify-center rounded border line-border', item.checked && 'app-button')}>
+                          {item.checked && <Check size={13} />}
+                        </span>
+                        <span className="truncate">{item.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <button
                   onClick={scanning ? stopScan : startScan}
                   disabled={locked}
@@ -3468,103 +3522,6 @@
               </section>
             </div>
           </Shell>
-        );
-      }
-
-      // ── Club Cards Panel (admin) ───────────────────────────────────────────
-      function ClubCardsPanel({ appConfig }) {
-        const [clubs, setClubs] = useState([]);
-        const [configId, setConfigId] = useState(null);
-        const [saving, setSaving] = useState(false);
-        const toast = useToast();
-        const ndefRef = useRef(null);
-        const [listening, setListening] = useState(false);
-
-        useEffect(() => {
-          supabase.from('mivtza_config').select('id,club_cards').limit(1).maybeSingle().then(({ data }) => {
-            if (data) { setConfigId(data.id); try { if (data.club_cards) setClubs(JSON.parse(data.club_cards)); } catch {} }
-          });
-        }, []);
-
-        const persist = async (next) => {
-          setClubs(next); setSaving(true);
-          const payload = { club_cards: JSON.stringify(next) };
-          const { error } = configId
-            ? await supabase.from('mivtza_config').update(payload).eq('id', configId)
-            : await supabase.from('mivtza_config').upsert(payload);
-          setSaving(false);
-          if (error) toast.error(`Save failed: ${error.message}`);
-          else toast.success('Club portals saved ✓');
-        };
-
-        const addClub = () => persist([...clubs, { nfc_id: '', name: 'New Club', items: [] }]);
-        const removeClub = (idx) => persist(clubs.filter((_, i) => i !== idx));
-        const updateClub = (idx, field, value) => {
-          const next = clubs.map((c, i) => i === idx ? { ...c, [field]: value } : c);
-          setClubs(next); // local only; persist on blur
-        };
-
-        const scanForClub = async (idx) => {
-          if (!('NDEFReader' in window) || !window.isSecureContext) { toast.warning('NFC not available.'); return; }
-          try {
-            const ndef = new NDEFReader(); ndefRef.current = ndef;
-            ndef.onreading = (e) => {
-              setListening(false);
-              if (e.serialNumber) {
-                const next = clubs.map((c, i) => i === idx ? { ...c, nfc_id: e.serialNumber } : c);
-                persist(next);
-              }
-            };
-            await ndef.scan(); setListening(idx);
-          } catch { setListening(false); }
-        };
-
-        const allItems = [...(appConfig?.learning_items||[]), ...(appConfig?.hanhaga_items||[]), ...(appConfig?.teacher_items||[])];
-
-        return (
-          <div className="glass-panel rounded-lg p-5">
-            <ToastStack toasts={toast.toasts} remove={toast.remove} />
-            <h2 className="mb-1 flex items-center gap-2 text-xl font-extrabold"><Sparkles className="accent-text" /> Club / Event Portals</h2>
-            <p className="muted-text mb-4 text-xs font-semibold">Each club gets an operator NFC card. When tapped, opens a scanner so students tap through and get credited automatically.</p>
-            <button onClick={addClub} className="app-button focus-ring mb-4 inline-flex items-center gap-2 rounded px-4 py-2 text-sm font-extrabold"><Plus size={15}/> Add Club</button>
-            <div className="grid gap-4">
-              {clubs.map((club, idx) => (
-                <div key={idx} className="glass-panel rounded-lg p-4 grid gap-3">
-                  <div className="flex items-center gap-2">
-                    <input className="flex-1 bg-transparent font-extrabold outline-none text-base border-b line-border pb-1" placeholder="Club name (e.g. Chitas Club)" value={club.name} onChange={(e) => updateClub(idx,'name',e.target.value)} onBlur={() => persist([...clubs])} />
-                    <button onClick={() => removeClub(idx)} className="text-red-500"><Trash2 size={15}/></button>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <input className="min-w-0 flex-1 bg-transparent text-xs font-mono outline-none border-b line-border pb-1 muted-text" placeholder="Operator card NFC ID" value={club.nfc_id} onChange={(e) => updateClub(idx,'nfc_id',e.target.value)} onBlur={() => persist([...clubs])} />
-                    <button onClick={() => scanForClub(idx)} disabled={listening === idx} className="lux-card focus-ring inline-flex shrink-0 items-center gap-1 rounded px-3 py-1.5 text-xs font-extrabold disabled:opacity-70">
-                      {listening === idx ? <RefreshCw size={12} className="animate-spin"/> : <Smartphone size={12}/>}
-                      {listening === idx ? 'Tap…' : 'Scan'}
-                    </button>
-                  </div>
-                  <div>
-                    <p className="muted-text text-xs font-extrabold uppercase tracking-widest mb-2">Items to credit when student taps:</p>
-                    <div className="grid gap-1 sm:grid-cols-2">
-                      {allItems.map((item) => {
-                        const checked = (club.items||[]).includes(item.db_key);
-                        return (
-                          <label key={item.db_key} className={`flex items-center gap-2 rounded px-3 py-2 cursor-pointer text-sm font-semibold ${checked ? 'accent-bg' : 'glass-panel'}`}>
-                            <input type="checkbox" checked={checked} onChange={(e) => {
-                              const items = e.target.checked
-                                ? [...(club.items||[]), item.db_key]
-                                : (club.items||[]).filter((k) => k !== item.db_key);
-                              const next = clubs.map((c,i) => i===idx ? {...c, items} : c);
-                              persist(next);
-                            }} />
-                            {item.label}{item.points ? ` · ${item.points}pts` : ''}
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
         );
       }
 
