@@ -616,7 +616,7 @@
             </div>
             {children}
             <div className="mx-auto mt-8 max-w-7xl px-1 text-center">
-              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V34</p>
+              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V35</p>
               <p className="muted-text mt-1 text-xs font-semibold opacity-60">Copyright 2026 HINENI SYSTEMS</p>
             </div>
           </main>
@@ -1106,6 +1106,7 @@
         const [appConfig, setAppConfig] = useState(DEFAULT_CONFIG);
         const [entry, setEntry] = useState(() => getBlankEntry(DEFAULT_CONFIG));
         const [approved, setApproved] = useState(false);
+        const [approvalMessage, setApprovalMessage] = useState({ title: 'Transaction Approved', subtitle: 'Points Credited', tone: 'success' });
         const [alreadySubmitted, setAlreadySubmitted] = useState(false);
         const [date, setDate] = useState(() => shiftDate(today(), -1)); // defaults to yesterday
         const [configLoaded, setConfigLoaded] = useState(false);
@@ -1116,6 +1117,12 @@
         const [allowedBackDays, setAllowedBackDays] = useState(3650);
         const toast = useToast();
         const status = normalizeStatus(camper.card_status);
+
+        // Snapshot of what was actually saved when this date's entry loaded —
+        // kept separate from `entry` (which the camper is actively editing)
+        // so submit() can diff "before" vs "after" to pick the right modal
+        // message. Doesn't trigger re-renders since it never needs to.
+        const originalEntryRef = useRef({});
 
         // Load app-wide config + the camper backmarking limit once on mount.
         useEffect(() => {
@@ -1128,6 +1135,8 @@
             setAppConfig(cfg);
             if (backData?.allowed_back_marking_days !== undefined && backData?.allowed_back_marking_days !== null) {
               setAllowedBackDays(Number(backData.allowed_back_marking_days));
+            } else {
+              console.log('[Mivtza] app_config.allowed_back_marking_days not set — falling back to a generous default (3650) so campers are not accidentally locked out.');
             }
             setConfigLoaded(true);
           });
@@ -1142,6 +1151,7 @@
           fetchDailyEntry(camper.id, date, appConfig).then(({ entry: filled, existed }) => {
             if (cancelled) return;
             setEntry(filled);
+            originalEntryRef.current = filled; // "before" snapshot for change detection at submit time
             setAlreadySubmitted(existed);
             setLoadingEntry(false);
           });
@@ -1172,9 +1182,60 @@
         const minAllowedDate = shiftDate(today(), -effectiveAllowedBackDays);
         const maxAllowedDate = today();
 
+        // Debug visibility into exactly what boundaries are being computed,
+        // since "the restriction isn't locking down" is much easier to
+        // diagnose with the actual min/max strings visible in the console.
+        useEffect(() => {
+          if (!configLoaded) return;
+          console.log('[Mivtza] date boundary check', {
+            today: today(),
+            rawAllowedBackDays: allowedBackDays,
+            isSunday: isTodaySunday(),
+            effectiveAllowedBackDays,
+            minAllowedDate,
+            maxAllowedDate,
+            currentDate: date,
+            diff,
+            atOldestAllowed,
+            atNewestAllowed,
+          });
+        }, [configLoaded, date, allowedBackDays]);
+
+        // Defense-in-depth: force `date` itself back inside [min, max] any
+        // time it, or the bounds, change — not just when the arrows are
+        // clicked. This is what actually stops the restriction from being
+        // bypassable: even if `date` somehow ends up out of range (a race
+        // before config finishes loading, a browser accepting a typed date
+        // despite min/max, or the Sunday exception changing effectiveAllowed
+        // BackDays), this snaps it back immediately rather than trusting the
+        // UI controls alone to keep it in bounds.
+        useEffect(() => {
+          if (!configLoaded) return;
+          if (date < minAllowedDate) {
+            console.log('[Mivtza] date was before minAllowedDate — clamping', date, '->', minAllowedDate);
+            setDate(minAllowedDate);
+          } else if (date > maxAllowedDate) {
+            console.log('[Mivtza] date was after maxAllowedDate — clamping', date, '->', maxAllowedDate);
+            setDate(maxAllowedDate);
+          }
+        }, [configLoaded, date, minAllowedDate, maxAllowedDate]);
+
         const submit = async () => {
           if (isBlocked) return; // defense in depth — button is hidden anyway
           const allConfigItems = [...(appConfig.learning_items||[]), ...(appConfig.hanhaga_items||[]), ...(appConfig.teacher_items||[])];
+
+          // Diff "before" (what was already saved for this date) against
+          // "after" (current checkbox state) across only the items a camper
+          // can actually edit, to choose the right modal message.
+          const before = originalEntryRef.current || {};
+          let added = false, removed = false;
+          (appConfig.hanhaga_items || []).forEach((item) => {
+            const wasTrue = !!before[item.db_key];
+            const isTrue = !!entry[item.db_key];
+            if (!wasTrue && isTrue) added = true;
+            if (wasTrue && !isTrue) removed = true;
+          });
+
           const { error } = await saveDailyEntry({
             camperId: camper.id,
             date,
@@ -1184,6 +1245,24 @@
             allConfigItems,
           });
           if (error) { toast.error(error.message); return; }
+
+          if (!added && !removed) {
+            setApprovalMessage({ title: 'No Changes Detected', subtitle: 'Your checklist is already up to date', tone: 'neutral' });
+          } else if (removed) {
+            // Any removal takes precedence over an added item in the same
+            // submit — "Changes Saved" reads correctly whether it was a pure
+            // uncheck or a mix of both, whereas "Points Credited" would be
+            // misleading if something was also taken away.
+            setApprovalMessage({ title: 'Update Approved', subtitle: 'Changes Saved', tone: 'success' });
+          } else {
+            setApprovalMessage({ title: 'Transaction Approved', subtitle: 'Points Credited', tone: 'success' });
+          }
+
+          // Refresh the "before" snapshot to match what was just saved, so a
+          // second submit in the same visit without further changes correctly
+          // reports "No Changes Detected" instead of re-diffing against stale data.
+          originalEntryRef.current = { ...entry };
+
           setApproved(true);
           window.setTimeout(() => { setApproved(false); onLogout(); }, 2000);
         };
@@ -1348,9 +1427,13 @@
             {approved && (
               <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-6">
                 <div className="lux-card max-w-md rounded-lg p-8 text-center shadow-luxury">
-                  <BadgeCheck className="mx-auto mb-4" size={52} />
-                  <h2 className="text-3xl font-extrabold">Transaction Approved</h2>
-                  <p className="mt-2 text-lg font-bold">Points Credited</p>
+                  {approvalMessage.tone === 'neutral' ? (
+                    <Check className="muted-text mx-auto mb-4" size={52} />
+                  ) : (
+                    <BadgeCheck className="mx-auto mb-4" size={52} />
+                  )}
+                  <h2 className="text-3xl font-extrabold">{approvalMessage.title}</h2>
+                  <p className={classNames('mt-2 text-lg font-bold', approvalMessage.tone === 'neutral' && 'muted-text')}>{approvalMessage.subtitle}</p>
                 </div>
               </div>
             )}
