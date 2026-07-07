@@ -616,7 +616,7 @@
             </div>
             {children}
             <div className="mx-auto mt-8 max-w-7xl px-1 text-center">
-              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V41</p>
+              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V42</p>
               <p className="muted-text mt-1 text-xs font-semibold opacity-60">Copyright 2026 HINENI SYSTEMS</p>
             </div>
           </main>
@@ -1176,7 +1176,11 @@
         const effectiveAllowedBackDays = isTodaySunday() ? Math.max(allowedBackDays, 2) : allowedBackDays;
 
         const isLocked = isPast && diff > effectiveAllowedBackDays;
-        const isBlocked = isFuture || isLocked; // no editing/saving allowed at all
+        // Today is now categorically locked for campers — they mark
+        // yesterday's (or earlier) progress, never same-day, so isToday joins
+        // isFuture/isLocked as a blocking condition. Today is still viewable
+        // (read-only) via navigation, just never editable or submittable.
+        const isBlocked = isFuture || isLocked || isToday; // no editing/saving allowed at all
 
         // Arrow + calendar-picker boundaries
         const atOldestAllowed = diff >= effectiveAllowedBackDays; // left arrow disabled here
@@ -1346,8 +1350,8 @@
                 {/* Role-based date status notice */}
                 <div className="mt-3">
                   {isToday && (
-                    <div className="rounded-xl border border-green-400/40 bg-green-500/10 px-4 py-2.5 text-center text-sm font-bold text-green-600">
-                      📅 Marking for Today
+                    <div className="rounded-xl border border-blue-400/40 bg-blue-500/10 px-4 py-2.5 text-center text-sm font-bold text-blue-500">
+                      🕐 Today isn't open for marking yet — come back tomorrow. Use the ← arrow to record Yesterday and earlier.
                     </div>
                   )}
                   {isYesterday && !isLocked && (
