@@ -616,7 +616,7 @@
             </div>
             {children}
             <div className="mx-auto mt-8 max-w-7xl px-1 text-center">
-              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V40</p>
+              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V41</p>
               <p className="muted-text mt-1 text-xs font-semibold opacity-60">Copyright 2026 HINENI SYSTEMS</p>
             </div>
           </main>
@@ -3307,6 +3307,17 @@
           // conversion just ensures the value we send is always unambiguous).
           const campersCredited = parseInt(sessionQueue.length, 10) || 0;
           const { error: eventError } = await supabase.from('events').insert({
+            // 'name' is a legacy column some events table setups still have
+            // as NOT NULL from before club_name/submission_date existed —
+            // sending a fallback string here prevents a "null value violates
+            // not-null constraint" error on those schemas. NOTE: this
+            // requires the 'events' table to actually have a 'name' column —
+            // Supabase/PostgREST rejects unknown keys with a schema-cache
+            // error rather than silently ignoring them, so if your table
+            // doesn't have this column, run:
+            //   ALTER TABLE events ADD COLUMN IF NOT EXISTS name text;
+            // (or drop the NOT NULL constraint if 'name' is meant to be optional).
+            name: `${CLUB_NAME} Session`,
             club_name: CLUB_NAME,
             submission_date: today(),
             camper_count: campersCredited,
