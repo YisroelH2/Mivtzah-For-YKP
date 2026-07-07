@@ -1127,18 +1127,23 @@
         const originalEntryRef = useRef({});
 
         // Load app-wide config + the camper backmarking limit once on mount.
+        // app_config is a key-value table (columns: id, key, value,
+        // description) — not a table with a dedicated column per setting —
+        // so we look up the specific row by its key and read .value, rather
+        // than selecting a column named 'allowed_back_marking_days' directly.
         useEffect(() => {
           Promise.all([
             supabase.from('mivtza_config').select('config_json').limit(1).maybeSingle(),
-            supabase.from('app_config').select('allowed_back_marking_days').limit(1).maybeSingle(),
+            supabase.from('app_config').select('value').eq('key', 'allowed_back_marking_days').maybeSingle(),
           ]).then(([{ data: cfgData }, { data: backData }]) => {
             let cfg = DEFAULT_CONFIG;
             if (cfgData?.config_json) try { cfg = JSON.parse(cfgData.config_json); } catch {}
             setAppConfig(cfg);
-            if (backData?.allowed_back_marking_days !== undefined && backData?.allowed_back_marking_days !== null) {
-              setAllowedBackDays(Number(backData.allowed_back_marking_days));
+            const rawValue = backData?.value;
+            if (rawValue !== undefined && rawValue !== null && rawValue !== '' && !isNaN(Number(rawValue))) {
+              setAllowedBackDays(Number(rawValue));
             } else {
-              console.log('[Mivtza] app_config.allowed_back_marking_days not set — falling back to a generous default (3650) so campers are not accidentally locked out.');
+              console.log('[Mivtza] app_config key "allowed_back_marking_days" not found or not numeric — falling back to a generous default (3650) so campers are not accidentally locked out.');
             }
             setConfigLoaded(true);
           });
