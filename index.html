@@ -616,7 +616,7 @@
             </div>
             {children}
             <div className="mx-auto mt-8 max-w-7xl px-1 text-center">
-              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V37</p>
+              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V38</p>
               <p className="muted-text mt-1 text-xs font-semibold opacity-60">Copyright 2026 HINENI SYSTEMS</p>
             </div>
           </main>
@@ -2933,6 +2933,7 @@
         const [loadingEntry, setLoadingEntry] = useState(false);
         const [nfcListening, setNfcListening] = useState(false);
         const [submitted, setSubmitted] = useState(false);
+        const [showClubScanner, setShowClubScanner] = useState(false);
         const toast = useToast();
         const ndefRef = useRef(null);
         const nfcProcessingRef = useRef(false); // debounce multiple reads
@@ -3024,17 +3025,28 @@
         return (
           <Shell status="Platinum" onLogout={onLogout}>
             <ToastStack toasts={toast.toasts} remove={toast.remove} />
+            {showClubScanner ? (
+              <ChitasClubPortal onBack={() => setShowClubScanner(false)} />
+            ) : (
             <div className="mx-auto max-w-2xl">
-              <div className="mb-5">
-                <p className="accent-text text-sm font-extrabold uppercase tracking-[0.2em]">Teacher / Counselor Portal</p>
-                <h1 className="mt-1 text-3xl font-extrabold">Mark Student Progress</h1>
-                {(teacherName || bunk) && (
-                  <p className="muted-text mt-1 text-sm font-semibold">
-                    {teacherName && <span>{teacherName}</span>}
-                    {bunk && <span className="ml-2 accent-text font-extrabold">· {bunk}</span>}
-                    {bunk && <span className="muted-text"> ({campers.length} students)</span>}
-                  </p>
-                )}
+              <div className="mb-5 flex items-start justify-between gap-3">
+                <div>
+                  <p className="accent-text text-sm font-extrabold uppercase tracking-[0.2em]">Teacher / Counselor Portal</p>
+                  <h1 className="mt-1 text-3xl font-extrabold">Mark Student Progress</h1>
+                  {(teacherName || bunk) && (
+                    <p className="muted-text mt-1 text-sm font-semibold">
+                      {teacherName && <span>{teacherName}</span>}
+                      {bunk && <span className="ml-2 accent-text font-extrabold">· {bunk}</span>}
+                      {bunk && <span className="muted-text"> ({campers.length} students)</span>}
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={() => setShowClubScanner(true)}
+                  className="lux-card focus-ring shrink-0 inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-extrabold shadow-luxury"
+                >
+                  <Smartphone size={16} /> Chitas Club Scanner
+                </button>
               </div>
 
               {!selected ? (
@@ -3150,7 +3162,209 @@
                 </div>
               )}
             </div>
+            )}
           </Shell>
+        );
+      }
+
+      // ── Chitas Club Scanner — session-queue staging workflow ─────────────
+      // Reached from inside TeacherPortal (already-authenticated teacher/
+      // counselor session via teacher_profiles) rather than a separate NFC
+      // operator card. Scanning never writes directly to daily_entries —
+      // every tap just looks the camper up and stages them in a local
+      // sessionQueue array. Nothing touches the database until the teacher
+      // explicitly reviews the queue and hits "Review & Submit Session".
+      function ChitasClubPortal({ onBack }) {
+        const CLUB_NAME = 'Chitas Club';
+        const [checking, setChecking] = useState(true);
+        const [locked, setLocked] = useState(false);
+        const [clubItems, setClubItems] = useState([]); // [{db_key,label,points}] — pulled from admin's Club Portal config
+        const [allCampers, setAllCampers] = useState([]);
+        const [sessionQueue, setSessionQueue] = useState([]);
+        const [scanning, setScanning] = useState(false);
+        const [submitting, setSubmitting] = useState(false);
+        const toast = useToast();
+        const ndefRef = useRef(null);
+        // Mirrors sessionQueue as a Set for instant duplicate-tap checks
+        // inside the NFC onreading callback, without depending on stale
+        // closures over the sessionQueue state array.
+        const queueIdsRef = useRef(new Set());
+
+        useEffect(() => {
+          (async () => {
+            setChecking(true);
+            const [{ data: eventRow }, { data: cfgRow }, { data: roster }] = await Promise.all([
+              supabase.from('events').select('id').eq('club_name', CLUB_NAME).eq('submission_date', today()).maybeSingle(),
+              supabase.from('mivtza_config').select('config_json, club_cards').limit(1).maybeSingle(),
+              supabase.from(CAMPER_READ_TABLE).select('id,name,nfc_id'),
+            ]);
+            setLocked(!!eventRow);
+            setAllCampers(roster || []);
+
+            let cfg = DEFAULT_CONFIG;
+            if (cfgRow?.config_json) try { cfg = JSON.parse(cfgRow.config_json); } catch {}
+            const allConfigItems = [...(cfg.learning_items||[]), ...(cfg.hanhaga_items||[]), ...(cfg.teacher_items||[])];
+
+            let clubs = [];
+            try { clubs = JSON.parse(cfgRow?.club_cards || '[]'); } catch {}
+            const match = clubs.find((c) => (c.name || '').trim().toLowerCase() === CLUB_NAME.toLowerCase());
+            const activeKeys = match?.items || [];
+            setClubItems(allConfigItems.filter((i) => activeKeys.includes(i.db_key)));
+
+            setChecking(false);
+          })();
+        }, []);
+
+        const addToQueue = (camper) => {
+          if (queueIdsRef.current.has(camper.id)) {
+            toast.info(`${camper.name} is already in the queue.`);
+            return;
+          }
+          queueIdsRef.current.add(camper.id);
+          setSessionQueue((q) => [...q, camper]);
+          toast.success(`✔ ${camper.name} added to session queue successfully!`);
+        };
+
+        const removeFromQueue = (camperId) => {
+          queueIdsRef.current.delete(camperId);
+          setSessionQueue((q) => q.filter((c) => c.id !== camperId));
+        };
+
+        const startScan = async () => {
+          if (locked || scanning) return;
+          if (!('NDEFReader' in window) || !window.isSecureContext) {
+            toast.warning('Web NFC not available on this device — use Android Chrome.');
+            return;
+          }
+          try {
+            const ndef = new NDEFReader();
+            ndefRef.current = ndef;
+            ndef.onreading = (e) => {
+              const target = normalizeNfcId(e.serialNumber || '');
+              const match = allCampers.find((c) => normalizeNfcId(c.nfc_id) === target);
+              if (match) addToQueue(match);
+              else toast.warning('Card not found in roster.');
+            };
+            ndef.onreadingerror = () => toast.warning('Read failed — hold the card flat and try again.');
+            await ndef.scan();
+            setScanning(true);
+          } catch (err) {
+            setScanning(false);
+            toast.error(err.message || 'Could not start the NFC scanner.');
+          }
+        };
+
+        // Web NFC's NDEFReader has no formal stop() in the spec — this just
+        // stops the UI from reacting to further onreading events and lets the
+        // teacher restart cleanly if needed.
+        const stopScan = () => setScanning(false);
+
+        const submitSession = async () => {
+          if (locked) return;
+          if (sessionQueue.length === 0) { toast.error('Queue is empty — scan at least one camper first.'); return; }
+          if (clubItems.length === 0) { toast.error('No tracking items are configured for Chitas Club yet — set this up in Admin → Setup → Club Portals.'); return; }
+
+          setSubmitting(true);
+          let ok = 0, fail = 0;
+          for (const camper of sessionQueue) {
+            const payload = { camper_id: camper.id, entry_date: today() };
+            const extra = {};
+            clubItems.forEach((item) => {
+              if (KNOWN_ENTRY_COLUMNS.has(item.db_key)) payload[item.db_key] = true;
+              else extra[item.db_key] = true;
+            });
+            if (Object.keys(extra).length) payload.entry_data = extra;
+            const { error } = await supabase.from('daily_entries').upsert(payload, { onConflict: 'camper_id,entry_date' });
+            if (error) fail++; else ok++;
+          }
+
+          // Proof-of-run row — this is what the lock-check at the top of this
+          // component queries for, so double submissions the same day are
+          // blocked automatically from here on.
+          const { error: eventError } = await supabase.from('events').insert({
+            club_name: CLUB_NAME,
+            submission_date: today(),
+            camper_count: sessionQueue.length,
+          });
+
+          setSubmitting(false);
+          if (eventError) {
+            toast.error(`Credited ${ok} camper(s), but failed to lock today's submission: ${eventError.message}`);
+          } else {
+            toast.success(`${ok} camper(s) credited${fail ? `, ${fail} failed` : ''} ✓ Session locked for today.`);
+            setLocked(true);
+          }
+          setSessionQueue([]);
+          queueIdsRef.current.clear();
+        };
+
+        return (
+          <div className="mx-auto max-w-xl">
+            <ToastStack toasts={toast.toasts} remove={toast.remove} />
+            <div className="mb-5 flex items-start justify-between gap-3">
+              <div>
+                <p className="accent-text text-sm font-extrabold uppercase tracking-[0.2em]">Chitas Club</p>
+                <h1 className="mt-1 text-3xl font-extrabold">Event Attendance Scanner</h1>
+                <p className="muted-text mt-1 text-sm font-semibold">
+                  {clubItems.length > 0 ? `Credits: ${clubItems.map((i) => i.label).join(', ')}` : 'No items configured yet.'}
+                </p>
+              </div>
+              <button onClick={onBack} className="glass-panel focus-ring shrink-0 rounded-lg px-3 py-2 text-sm font-bold">
+                <ChevronLeft size={16} className="inline -mt-0.5" /> Back
+              </button>
+            </div>
+
+            {checking && <p className="muted-text text-sm font-semibold">Checking today's submission status…</p>}
+
+            {!checking && locked && (
+              <div className="mb-4 rounded-xl border border-red-400/40 bg-red-500/10 px-4 py-3 text-center text-sm font-bold text-red-500">
+                🔒 Chitas Club achievements for today have already been submitted by a teacher. Double submissions are locked.
+              </div>
+            )}
+
+            {!checking && (
+              <div className="grid gap-4">
+                <button
+                  onClick={scanning ? stopScan : startScan}
+                  disabled={locked}
+                  className={classNames(
+                    'lux-card focus-ring flex w-full items-center justify-center gap-3 rounded-2xl px-5 py-6 text-xl font-extrabold shadow-luxury transition disabled:cursor-not-allowed disabled:opacity-40',
+                    scanning && 'nfc-listening'
+                  )}
+                >
+                  {scanning ? <RefreshCw className="relative z-10 animate-spin" size={24} /> : <Smartphone className="relative z-10" size={24} />}
+                  <span className="relative z-10">{scanning ? 'Scanning — tap cards to add' : 'Start Scan'}</span>
+                </button>
+
+                <div className="glass-panel rounded-xl p-5">
+                  <div className="mb-3 flex items-center justify-between">
+                    <h2 className="font-extrabold">Session Queue</h2>
+                    <span className="muted-text text-xs font-semibold">{sessionQueue.length} camper{sessionQueue.length === 1 ? '' : 's'}</span>
+                  </div>
+                  {sessionQueue.length === 0 && <p className="muted-text text-sm font-semibold">No campers scanned yet.</p>}
+                  <div className="grid max-h-80 gap-2 overflow-y-auto">
+                    {sessionQueue.map((c) => (
+                      <div key={c.id} className="glass-panel flex items-center justify-between rounded-lg px-3 py-2">
+                        <span className="text-sm font-bold">{c.name}</span>
+                        <button onClick={() => removeFromQueue(c.id)} className="focus-ring text-red-500 hover:scale-110" title="Remove from queue">
+                          <X size={15} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  onClick={submitSession}
+                  disabled={locked || submitting || sessionQueue.length === 0}
+                  className="app-button focus-ring flex w-full items-center justify-center gap-2 rounded-xl px-5 py-4 text-lg font-extrabold disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {submitting ? <RefreshCw size={20} className="animate-spin" /> : <BadgeCheck size={20} />}
+                  {submitting ? 'Submitting…' : 'Review & Submit Session'}
+                </button>
+              </div>
+            )}
+          </div>
         );
       }
 
