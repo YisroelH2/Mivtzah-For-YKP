@@ -372,7 +372,9 @@
       // Fetches today's (or any date's) daily_entries row for one camper and
       // merges it into a blank entry object, so checkboxes pre-check to match
       // whatever is already saved — including items stored in the entry_data/
-      // teacher_data JSONB columns for custom config items.
+      // teacher_data JSONB columns for custom config items. Also reports
+      // whether a row actually existed, so callers can show an "already
+      // submitted" style notice.
       async function fetchDailyEntry(camperId, date, cfg) {
         const blank = getBlankEntry(cfg);
         const { data: row } = await supabase
@@ -381,12 +383,24 @@
           .eq('camper_id', camperId)
           .eq('entry_date', date)
           .maybeSingle();
-        if (!row) return blank;
+        if (!row) return { entry: blank, existed: false };
         const filled = { ...blank };
         Object.keys(filled).forEach((k) => { if (row[k] !== undefined) filled[k] = row[k]; });
         if (row.entry_data)   Object.entries(row.entry_data).forEach(([k, v]) => { filled[k] = v; });
         if (row.teacher_data) Object.entries(row.teacher_data).forEach(([k, v]) => { filled[k] = v; });
-        return filled;
+        return { entry: filled, existed: true };
+      }
+
+      // Whole-day difference between today and a 'YYYY-MM-DD' string, using
+      // the same UTC-anchored arithmetic as shiftDate/formatDateHuman so the
+      // result never drifts based on the viewer's local timezone.
+      // Positive = date is in the past, 0 = today, negative = date is in the future.
+      function daysBeforeToday(dateStr) {
+        const [ty, tm, td] = today().split('-').map(Number);
+        const [y, m, d] = dateStr.split('-').map(Number);
+        const t = Date.UTC(ty, tm - 1, td);
+        const s = Date.UTC(y, m - 1, d);
+        return Math.round((t - s) / 86400000);
       }
 
       // Saves only the fields the current form actually edits (itemsToUpdate),
@@ -552,7 +566,7 @@
               </div>
             </div>
             {children}
-            <p className="muted-text mx-auto mt-8 max-w-7xl px-1 text-center text-[10px] font-semibold tracking-widest opacity-40">V30</p>
+            <p className="muted-text mx-auto mt-8 max-w-7xl px-1 text-center text-[10px] font-semibold tracking-widest opacity-40">V31</p>
           </main>
         );
       }
@@ -1041,47 +1055,65 @@
         const [entry, setEntry] = useState(() => getBlankEntry(DEFAULT_CONFIG));
         const [approved, setApproved] = useState(false);
         const [alreadySubmitted, setAlreadySubmitted] = useState(false);
+        const [date, setDate] = useState(today());
+        const [configLoaded, setConfigLoaded] = useState(false);
+        const [loadingEntry, setLoadingEntry] = useState(false);
+        // Fail-open default: if the app_config table/row isn't set up yet,
+        // don't lock every camper out of backmarking unexpectedly — treat it
+        // as effectively unlimited until an admin explicitly sets a limit.
+        const [allowedBackDays, setAllowedBackDays] = useState(3650);
         const toast = useToast();
         const status = normalizeStatus(camper.card_status);
 
+        // Load app-wide config + the camper backmarking limit once on mount.
         useEffect(() => {
-          // Load config and check for an existing entry today in parallel
           Promise.all([
             supabase.from('mivtza_config').select('config_json').limit(1).maybeSingle(),
-            supabase.from('daily_entries')
-              .select('*')
-              .eq('camper_id', camper.id)
-              .eq('entry_date', today())
-              .maybeSingle(),
-          ]).then(([{ data: cfgData }, { data: existingEntry }]) => {
+            supabase.from('app_config').select('allowed_back_marking_days').limit(1).maybeSingle(),
+          ]).then(([{ data: cfgData }, { data: backData }]) => {
             let cfg = DEFAULT_CONFIG;
             if (cfgData?.config_json) try { cfg = JSON.parse(cfgData.config_json); } catch {}
             setAppConfig(cfg);
-            if (existingEntry) {
-              // Pre-fill the form with what was already submitted
-              const filled = getBlankEntry(cfg);
-              Object.keys(filled).forEach((k) => {
-                if (existingEntry[k] !== undefined) filled[k] = existingEntry[k];
-              });
-              // Also check entry_data JSONB for extra items
-              if (existingEntry.entry_data) {
-                Object.entries(existingEntry.entry_data).forEach(([k, v]) => { filled[k] = v; });
-              }
-              setEntry(filled);
-              setAlreadySubmitted(true);
-            } else {
-              setEntry(getBlankEntry(cfg));
+            if (backData?.allowed_back_marking_days !== undefined && backData?.allowed_back_marking_days !== null) {
+              setAllowedBackDays(Number(backData.allowed_back_marking_days));
             }
+            setConfigLoaded(true);
           });
         }, []);
 
+        // (Re)load today's — or whichever date is selected — existing entry
+        // once config is ready, and again any time the date arrows change it.
+        useEffect(() => {
+          if (!configLoaded) return;
+          let cancelled = false;
+          setLoadingEntry(true);
+          fetchDailyEntry(camper.id, date, appConfig).then(({ entry: filled, existed }) => {
+            if (cancelled) return;
+            setEntry(filled);
+            setAlreadySubmitted(existed);
+            setLoadingEntry(false);
+          });
+          return () => { cancelled = true; };
+        }, [date, configLoaded]);
+
         const score = calculateScore(entry, appConfig);
 
+        // ── Role-based date status (campers only — counselors/teachers in
+        // TeacherPortal have zero such restrictions by design) ──────────────
+        const diff = daysBeforeToday(date);       // >0 past, 0 today, <0 future
+        const isToday = diff === 0;
+        const isYesterday = diff === 1;
+        const isFuture = diff < 0;
+        const isPast = diff > 0;
+        const isLocked = isPast && diff > allowedBackDays;
+        const isBlocked = isFuture || isLocked; // no editing/saving allowed at all
+
         const submit = async () => {
+          if (isBlocked) return; // defense in depth — button is hidden anyway
           const allConfigItems = [...(appConfig.learning_items||[]), ...(appConfig.hanhaga_items||[]), ...(appConfig.teacher_items||[])];
           const { error } = await saveDailyEntry({
             camperId: camper.id,
-            date: today(),
+            date,
             itemsToUpdate: appConfig.hanhaga_items || [], // campers only mark hanhagos
             entryState: entry,
             extraJsonField: 'entry_data',
@@ -1110,19 +1142,87 @@
                   <Stat label="Lifetime" value={camper.total_points} icon={Award} />
                   <Stat label="This Week" value={camper.weekly_points} icon={CalendarDays} />
                 </div>
+
+                {/* Date navigator */}
+                <div className="mt-4 flex items-center justify-center gap-2 border-t line-border pt-4">
+                  <button
+                    onClick={() => setDate((d) => shiftDate(d, -1))}
+                    disabled={loadingEntry}
+                    className="focus-ring flex h-9 w-9 shrink-0 items-center justify-center rounded-full glass-panel transition hover:scale-105 disabled:opacity-50"
+                    aria-label="Previous day"
+                  >
+                    <ChevronLeft size={18} />
+                  </button>
+
+                  <div className="flex min-w-[200px] items-center justify-center gap-2 text-center">
+                    <span className="text-sm font-extrabold">{formatDateHuman(date)}</span>
+                    {loadingEntry && <RefreshCw size={12} className="muted-text animate-spin shrink-0" />}
+                  </div>
+
+                  <button
+                    onClick={() => setDate((d) => shiftDate(d, 1))}
+                    disabled={loadingEntry}
+                    className="focus-ring flex h-9 w-9 shrink-0 items-center justify-center rounded-full glass-panel transition hover:scale-105 disabled:opacity-50"
+                    aria-label="Next day"
+                  >
+                    <ChevronRight size={18} />
+                  </button>
+
+                  <label
+                    className="focus-ring relative flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full glass-panel transition hover:scale-105"
+                    title="Jump to a specific date"
+                  >
+                    <CalendarDays size={15} />
+                    <input
+                      type="date"
+                      value={date}
+                      onChange={(e) => setDate(e.target.value)}
+                      className="absolute inset-0 cursor-pointer opacity-0"
+                    />
+                  </label>
+                </div>
+
+                {/* Role-based date status notice */}
+                <div className="mt-3">
+                  {isToday && (
+                    <div className="rounded-xl border border-green-400/40 bg-green-500/10 px-4 py-2.5 text-center text-sm font-bold text-green-600">
+                      📅 Marking for Today
+                    </div>
+                  )}
+                  {isYesterday && !isLocked && (
+                    <div className="rounded-xl border border-amber-400/40 bg-amber-500/10 px-4 py-2.5 text-center text-sm font-bold text-amber-600">
+                      📝 Catching Up: You are marking what you accomplished YESTERDAY ({formatDateHuman(date)}).
+                    </div>
+                  )}
+                  {isPast && !isYesterday && !isLocked && (
+                    <div className="rounded-xl border border-amber-400/40 bg-amber-500/10 px-4 py-2.5 text-center text-sm font-bold text-amber-600">
+                      ⏳ Past Record: You are marking what you accomplished on {formatDateHuman(date)}.
+                    </div>
+                  )}
+                  {isLocked && (
+                    <div className="rounded-xl border border-red-400/40 bg-red-500/10 px-4 py-2.5 text-center text-sm font-bold text-red-500">
+                      🔒 Marking locked for this date by administration.
+                    </div>
+                  )}
+                  {isFuture && (
+                    <div className="rounded-xl border border-red-400/40 bg-red-500/10 px-4 py-2.5 text-center text-sm font-bold text-red-500">
+                      🚫 Future Date: You cannot record progress for a future date.
+                    </div>
+                  )}
+                </div>
               </section>
 
               <div className="grid gap-5 lg:grid-cols-[1fr_20rem]">
                 <section className="grid gap-5">
                   {/* Hanhagos */}
-                  <div className="glass-panel rounded-lg p-5">
+                  <div className={classNames('glass-panel rounded-lg p-5', isBlocked && 'opacity-50 pointer-events-none')}>
                     <h2 className="mb-1 flex items-center gap-2 text-xl font-extrabold"><ShieldCheck className="accent-text" /> Daily Hanhagos</h2>
                     <p className="muted-text mb-4 text-xs font-semibold">
                       Each hanhaga = +{appConfig.hanhaga_bonus_per_item ?? 5} bonus pts · Max {(appConfig.hanhaga_items || []).length * Number(appConfig.hanhaga_bonus_per_item ?? 5)} pts
                     </p>
                     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                       {(appConfig.hanhaga_items || []).map((item) => (
-                        <CheckboxTile key={item.db_key} label={item.label} checked={entry[item.db_key] || false} onChange={(v) => setEntry({ ...entry, [item.db_key]: v })} />
+                        <CheckboxTile key={item.db_key} label={item.label} checked={entry[item.db_key] || false} onChange={(v) => !isBlocked && setEntry({ ...entry, [item.db_key]: v })} />
                       ))}
                     </div>
                   </div>
@@ -1134,7 +1234,7 @@
                       <p className="muted-text mb-4 text-xs font-semibold">Your teacher fills these in — they appear here after being marked.</p>
                       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                         {(appConfig.teacher_items || []).map((item) => (
-                          <CheckboxTile key={item.db_key} label={`${item.label}${item.points ? ` · ${item.points}pts` : ''}`} checked={entry[item.db_key] || false} onChange={(v) => setEntry({ ...entry, [item.db_key]: v })} />
+                          <CheckboxTile key={item.db_key} label={`${item.label}${item.points ? ` · ${item.points}pts` : ''}`} checked={entry[item.db_key] || false} onChange={() => {}} />
                         ))}
                       </div>
                     </div>
@@ -1144,22 +1244,23 @@
                 <aside className="glass-panel sticky top-5 h-fit rounded-lg p-5 shadow-luxury">
                   <p className="muted-text text-xs font-extrabold uppercase tracking-[0.16em]">Daily Score</p>
                   <p className="mt-3 text-6xl font-extrabold shimmer-text">{score}</p>
-                  <p className="muted-text mt-1 text-xs font-semibold">of {maxScore} possible today</p>
+                  <p className="muted-text mt-1 text-xs font-semibold">of {maxScore} possible</p>
                   <div className="mt-3 h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
                     <div className="h-full rounded-full accent-bg transition-all" style={{ width: `${maxScore ? Math.min(100, Math.round(score / maxScore * 100)) : 0}%`, background: 'var(--accent)' }} />
                   </div>
                   <p className="muted-text mt-3 text-xs font-semibold">
-                    Counselor learning: shown after teacher submits
                     Hanhagos: {(appConfig.hanhaga_items||[]).filter(i=>entry[i.db_key]).length} / {(appConfig.hanhaga_items||[]).length} · Bonus: {(appConfig.hanhaga_items||[]).filter(i=>entry[i.db_key]).length * Number(appConfig.hanhaga_bonus_per_item??5)} pts
                   </p>
-                  {alreadySubmitted && (
+                  {alreadySubmitted && !isBlocked && (
                     <div className="mt-4 rounded-xl border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-sm font-semibold text-amber-600">
-                      ✓ Already submitted today. Submitting again will update your entry.
+                      ✓ Already submitted for this date. Submitting again will update your entry.
                     </div>
                   )}
-                  <button className="app-button focus-ring mt-5 flex w-full items-center justify-center gap-2 rounded px-5 py-4 text-lg font-extrabold" onClick={submit}>
-                    <BadgeCheck size={22} /> {alreadySubmitted ? 'Update Submission' : 'Submit'}
-                  </button>
+                  {!isBlocked && (
+                    <button className="app-button focus-ring mt-5 flex w-full items-center justify-center gap-2 rounded px-5 py-4 text-lg font-extrabold" onClick={submit}>
+                      <BadgeCheck size={22} /> {alreadySubmitted ? 'Update Submission' : 'Submit'}
+                    </button>
+                  )}
                 </aside>
               </div>
             </div>
@@ -2404,7 +2505,7 @@
         // current state instead of a blank form every time.
         const loadEntryFor = async (camperId, forDate) => {
           setLoadingEntry(true);
-          const filled = await fetchDailyEntry(camperId, forDate, appConfig);
+          const { entry: filled } = await fetchDailyEntry(camperId, forDate, appConfig);
           setEntry(filled);
           setLoadingEntry(false);
         };
