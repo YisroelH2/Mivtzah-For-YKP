@@ -616,7 +616,7 @@
             </div>
             {children}
             <div className="mx-auto mt-8 max-w-7xl px-1 text-center">
-              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V35</p>
+              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V36</p>
               <p className="muted-text mt-1 text-xs font-semibold opacity-60">Copyright 2026 HINENI SYSTEMS</p>
             </div>
           </main>
@@ -1065,14 +1065,16 @@
         );
       }
 
-      function CheckboxTile({ checked, label, onChange }) {
+      function CheckboxTile({ checked, label, onChange, disabled = false }) {
         return (
           <button
             type="button"
-            onClick={() => onChange(!checked)}
+            disabled={disabled}
+            onClick={() => !disabled && onChange(!checked)}
             className={classNames(
               'focus-ring flex min-h-16 items-center gap-3 rounded-lg border p-4 text-left font-bold transition',
-              checked ? 'accent-bg line-border shadow-glow' : 'glass-panel hover:scale-[1.01]'
+              checked ? 'accent-bg line-border shadow-glow' : 'glass-panel hover:scale-[1.01]',
+              disabled && 'cursor-not-allowed opacity-40 hover:scale-100'
             )}
           >
             <span className={classNames('flex h-7 w-7 shrink-0 items-center justify-center rounded border line-border', checked && 'app-button')}>
@@ -1374,26 +1376,37 @@
               <div className="grid gap-5 lg:grid-cols-[1fr_20rem]">
                 <section className="grid gap-5">
                   {/* Hanhagos */}
-                  <div className={classNames('glass-panel rounded-lg p-5', isBlocked && 'opacity-50 pointer-events-none')}>
+                  <div className={classNames('glass-panel rounded-lg p-5', isBlocked && 'opacity-70')}>
                     <h2 className="mb-1 flex items-center gap-2 text-xl font-extrabold"><ShieldCheck className="accent-text" /> Daily Hanhagos</h2>
                     <p className="muted-text mb-4 text-xs font-semibold">
                       Each hanhaga = +{appConfig.hanhaga_bonus_per_item ?? 5} bonus pts · Max {(appConfig.hanhaga_items || []).length * Number(appConfig.hanhaga_bonus_per_item ?? 5)} pts
                     </p>
+                    {isBlocked && (
+                      <div className="mb-4 rounded-xl border border-red-400/40 bg-red-500/10 px-4 py-2.5 text-center text-sm font-bold text-red-500">
+                        🔒 This date is locked for editing.
+                      </div>
+                    )}
                     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                       {(appConfig.hanhaga_items || []).map((item) => (
-                        <CheckboxTile key={item.db_key} label={item.label} checked={entry[item.db_key] || false} onChange={(v) => !isBlocked && setEntry({ ...entry, [item.db_key]: v })} />
+                        <CheckboxTile
+                          key={item.db_key}
+                          label={item.label}
+                          checked={entry[item.db_key] || false}
+                          disabled={isBlocked}
+                          onChange={(v) => setEntry({ ...entry, [item.db_key]: v })}
+                        />
                       ))}
                     </div>
                   </div>
 
-                  {/* Teacher-marked items (read-only for camper) */}
+                  {/* Teacher-marked items (read-only for camper — always disabled regardless of date) */}
                   {(appConfig.teacher_items || []).length > 0 && (
                     <div className="glass-panel rounded-lg p-5">
                       <h2 className="mb-1 flex items-center gap-2 text-xl font-extrabold"><BadgeCheck className="accent-text" /> Teacher Credits</h2>
                       <p className="muted-text mb-4 text-xs font-semibold">Your teacher fills these in — they appear here after being marked.</p>
                       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                         {(appConfig.teacher_items || []).map((item) => (
-                          <CheckboxTile key={item.db_key} label={`${item.label}${item.points ? ` · ${item.points}pts` : ''}`} checked={entry[item.db_key] || false} onChange={() => {}} />
+                          <CheckboxTile key={item.db_key} label={`${item.label}${item.points ? ` · ${item.points}pts` : ''}`} checked={entry[item.db_key] || false} disabled={true} onChange={() => {}} />
                         ))}
                       </div>
                     </div>
@@ -1415,11 +1428,13 @@
                       ✓ Already submitted for this date. Submitting again will update your entry.
                     </div>
                   )}
-                  {!isBlocked && (
-                    <button className="app-button focus-ring mt-5 flex w-full items-center justify-center gap-2 rounded px-5 py-4 text-lg font-extrabold" onClick={submit}>
-                      <BadgeCheck size={22} /> {alreadySubmitted ? 'Update Submission' : 'Submit'}
-                    </button>
-                  )}
+                  <button
+                    disabled={isBlocked}
+                    className="app-button focus-ring mt-5 flex w-full items-center justify-center gap-2 rounded px-5 py-4 text-lg font-extrabold disabled:cursor-not-allowed disabled:opacity-40"
+                    onClick={submit}
+                  >
+                    <BadgeCheck size={22} /> {isBlocked ? 'Locked' : (alreadySubmitted ? 'Update Submission' : 'Submit')}
+                  </button>
                 </aside>
               </div>
             </div>
