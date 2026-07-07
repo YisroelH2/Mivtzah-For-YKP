@@ -581,7 +581,10 @@
               </div>
             </div>
             {children}
-            <p className="muted-text mx-auto mt-8 max-w-7xl px-1 text-center text-[10px] font-semibold tracking-widest opacity-40">V32</p>
+            <div className="mx-auto mt-8 max-w-7xl px-1 text-center">
+              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V32</p>
+              <p className="muted-text mt-1 text-xs font-semibold opacity-60">Copyright 2026 HINENI SYSTEMS</p>
+            </div>
           </main>
         );
       }
@@ -1070,7 +1073,7 @@
         const [entry, setEntry] = useState(() => getBlankEntry(DEFAULT_CONFIG));
         const [approved, setApproved] = useState(false);
         const [alreadySubmitted, setAlreadySubmitted] = useState(false);
-        const [date, setDate] = useState(today());
+        const [date, setDate] = useState(() => shiftDate(today(), -1)); // defaults to yesterday
         const [configLoaded, setConfigLoaded] = useState(false);
         const [loadingEntry, setLoadingEntry] = useState(false);
         // Fail-open default: if the app_config table/row isn't set up yet,
@@ -1680,10 +1683,6 @@
         // Inline edit state
         const [editRow, setEditRow] = useState(null);
 
-        const [correction, setCorrection] = useState({ camper_id: '', entry_date: today(), ...blankEntry, manual_points_adjustment: 0 });
-        const [correctionSearch, setCorrectionSearch] = useState('');
-        const [quickPoints, setQuickPoints] = useState('');
-
         // Roster NFC scan search
         const [rosterNfcListening, setRosterNfcListening] = useState(false);
         const rosterNdefRef = useRef(null);
@@ -1809,28 +1808,6 @@
           else { setEditRow(null); toast.success('Camper updated ✓'); load(); }
         };
 
-        // ── Correction ──────────────────────────────────────────────────────
-        const saveCorrection = async () => {
-          const selected = campers.find((c) => String(c.id) === String(correction.camper_id));
-          if (!selected) return;
-          // Build entry payload: known columns go direct, extras go to entry_data
-          const allItems = [...(appConfig.learning_items||[]), ...(appConfig.hanhaga_items||[]), ...(appConfig.teacher_items||[])];
-          const known = { camper_id: selected.id, entry_date: correction.entry_date };
-          const extra = {};
-          allItems.forEach((item) => {
-            if (KNOWN_ENTRY_COLUMNS.has(item.db_key)) known[item.db_key] = correction[item.db_key] || false;
-            else extra[item.db_key] = correction[item.db_key] || false;
-          });
-          if (Object.keys(extra).length) known.entry_data = extra;
-          const { error: entryError } = await supabase.from('daily_entries').upsert(known, { onConflict: 'camper_id,entry_date' });
-          const { error: camperError } = await supabase
-            .from(CAMPER_WRITE_TABLE)
-            .update({ manual_points_adjustment: Number(correction.manual_points_adjustment || 0) })
-            .eq('id', selected.id);
-          if (entryError || camperError) toast.error(entryError?.message || camperError?.message);
-          else { toast.success('Correction saved ✓'); load(); }
-        };
-
         // ── Save app config to mivtza_config.config_json ────────────────────
         const saveConfig = async (cfg, wStart, wEnd) => {
           const payload = {
@@ -1870,17 +1847,6 @@
             setRosterNfcListening(false);
             toast.error(`NFC error: ${err.message}`);
           }
-        };
-
-        const adjustPoints = async (delta) => {
-          const selected = campers.find((c) => String(c.id) === String(correction.camper_id));
-          if (!selected) { toast.error('Select a camper first.'); return; }
-          const pts = Number(quickPoints);
-          if (!pts) { toast.error('Enter a points amount.'); return; }
-          const next = Number(selected.manual_points_adjustment || 0) + (delta * pts);
-          const { error } = await supabase.from(CAMPER_WRITE_TABLE).update({ manual_points_adjustment: next }).eq('id', selected.id);
-          if (error) toast.error(`Failed: ${error.message}`);
-          else { toast.success(`${delta > 0 ? '+' : ''}${delta * pts} pts applied to ${selected.name} ✓`); load(); }
         };
 
         return (
@@ -2014,7 +1980,15 @@
                   appConfig={appConfig}
                   periodStart={periodStart}
                   periodEnd={periodEnd}
+                  toast={toast}
                   onClose={() => setHistoryCamper(null)}
+                  onAdjusted={(updatedCamper) => {
+                    // Instant feedback in the modal + roster, no page reload —
+                    // then quietly re-sync everything else from the source of truth.
+                    setHistoryCamper(updatedCamper);
+                    setCampers((prev) => prev.map((c) => c.id === updatedCamper.id ? { ...c, ...updatedCamper } : c));
+                    load();
+                  }}
                 />
               )}
 
@@ -2045,67 +2019,6 @@
                   </div>
                 </div>
                 <button className="app-button focus-ring mt-3 rounded px-5 py-3 font-extrabold" onClick={registerCamper}>Register Camper</button>
-              </section>
-
-              {/* ── Data Correction Panel ── */}
-              <section className="glass-panel rounded-lg p-5">
-                <h2 className="mb-4 flex items-center gap-2 text-xl font-extrabold"><PencilLine className="accent-text" /> Data Correction Panel</h2>
-                <div className="mb-3 grid gap-3 lg:grid-cols-[1fr_auto]">
-                  <div className="grid gap-2">
-                    <label className="glass-panel flex items-center gap-2 rounded px-3 py-2">
-                      <ScanLine size={16} className="muted-text shrink-0" />
-                      <input
-                        className="bg-transparent text-sm font-semibold outline-none w-full placeholder:font-medium"
-                        placeholder="Filter campers by name…"
-                        value={correctionSearch}
-                        onChange={(e) => setCorrectionSearch(e.target.value)}
-                      />
-                      {correctionSearch && <button onClick={() => setCorrectionSearch('')}><X size={14} /></button>}
-                    </label>
-                    <select
-                      className="focus-ring rounded border line-border bg-transparent px-3 py-3 font-bold"
-                      value={correction.camper_id}
-                      onChange={(e) => setCorrection({ ...correction, camper_id: e.target.value })}
-                    >
-                      <option value="">Select camper</option>
-                      {campers
-                        .filter(c => !correctionSearch || c.name?.toLowerCase().includes(correctionSearch.toLowerCase()))
-                        .map((c) => <option key={c.id} value={c.id}>{c.name} — {displayValue(c.weekly_points)} pts this week</option>)}
-                    </select>
-                  </div>
-                  <input className="focus-ring rounded border line-border bg-transparent px-3 py-3 font-bold" type="date" value={correction.entry_date} onChange={(e) => setCorrection({ ...correction, entry_date: e.target.value })} />
-                </div>
-
-                {/* Quick point adjustment */}
-                <div className="mb-4 glass-panel rounded-lg p-4">
-                  <p className="muted-text mb-2 text-xs font-extrabold uppercase tracking-[0.1em]">Quick Points Adjustment</p>
-                  <div className="flex items-center gap-2">
-                    <input
-                      className="focus-ring w-32 rounded border line-border bg-transparent px-3 py-2 font-bold text-center"
-                      type="number"
-                      min="0"
-                      placeholder="Points"
-                      value={quickPoints}
-                      onChange={(e) => setQuickPoints(e.target.value)}
-                    />
-                    <button className="app-button focus-ring inline-flex items-center gap-1 rounded px-4 py-2 font-extrabold" onClick={() => adjustPoints(1)}>
-                      <Plus size={16} /> Add
-                    </button>
-                    <button className="focus-ring inline-flex items-center gap-1 rounded border border-red-400/40 bg-red-500/10 px-4 py-2 font-extrabold text-red-600" onClick={() => adjustPoints(-1)}>
-                      <X size={16} /> Subtract
-                    </button>
-                    <input className="focus-ring ml-auto w-28 rounded border line-border bg-transparent px-3 py-2 font-bold text-center" type="number" placeholder="Manual pts" value={correction.manual_points_adjustment} onChange={(e) => setCorrection({ ...correction, manual_points_adjustment: e.target.value })} />
-                    <span className="muted-text text-xs font-semibold">set total</span>
-                  </div>
-                </div>
-
-                {/* Daily checkboxes */}
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  {[...(appConfig.learning_items||[]), ...(appConfig.hanhaga_items||[]), ...(appConfig.teacher_items||[])].map((item) => (
-                    <CheckboxTile key={item.db_key} label={item.label + (item.points ? ` · ${item.points}pts` : '')} checked={correction[item.db_key]||false} onChange={(value) => setCorrection({ ...correction, [item.db_key]: value })} />
-                  ))}
-                </div>
-                <button className="app-button focus-ring mt-4 inline-flex items-center gap-2 rounded px-5 py-3 font-extrabold" onClick={saveCorrection}><Save size={18} /> Save Entry + Manual Pts</button>
               </section>
 
               </>)}
@@ -2360,10 +2273,12 @@
         return 'bg-amber-400 text-amber-950 border border-amber-500'; // Gold
       }
 
-      function CamperHistoryModal({ camper, appConfig, periodStart, periodEnd, onClose }) {
+      function CamperHistoryModal({ camper, appConfig, periodStart, periodEnd, toast, onClose, onAdjusted }) {
         const [entries, setEntries] = useState([]);
         const [loading, setLoading] = useState(true);
         const [filter, setFilter] = useState('all'); // 'all' | 'missing'
+        const [quickAdjustAmount, setQuickAdjustAmount] = useState('');
+        const [adjusting, setAdjusting] = useState(false);
 
         useEffect(() => {
           if (!camper) return;
@@ -2375,6 +2290,41 @@
         }, [camper?.id]);
 
         if (!camper) return null;
+
+        // ── Quick Points Adjustment ──────────────────────────────────────────
+        // Updates campers.manual_points_adjustment directly — the same running
+        // total already used everywhere else in the app (camper_profiles view
+        // adds it straight into total_points), so this stays perfectly
+        // consistent with the roster, access lists, and card tier math rather
+        // than introducing a second, separate ledger the rest of the app
+        // doesn't know about.
+        const adjustPoints = async (delta) => {
+          const pts = Number(quickAdjustAmount);
+          if (!pts || pts <= 0) { toast.error('Enter a points amount greater than 0.'); return; }
+          setAdjusting(true);
+          const currentManual = Number(camper.manual_points_adjustment || 0);
+          const nextManual = currentManual + (delta * pts);
+          const { data, error } = await supabase
+            .from(CAMPER_WRITE_TABLE)
+            .update({ manual_points_adjustment: nextManual })
+            .eq('id', camper.id)
+            .select()
+            .maybeSingle();
+          setAdjusting(false);
+          if (error) { toast.error(`Failed: ${error.message}`); return; }
+          toast.success(`${delta > 0 ? '+' : '-'}${pts} pts applied to ${camper.name} ✓`);
+          setQuickAdjustAmount('');
+          // Reflect the new total instantly in the modal + roster without a
+          // page reload — total_points/manual_points_adjustment both bumped
+          // optimistically here, then load() (triggered by the parent's
+          // onAdjusted) quietly re-syncs everything from the source of truth.
+          const updatedCamper = {
+            ...camper,
+            manual_points_adjustment: nextManual,
+            total_points: (Number(camper.total_points) || 0) + (delta * pts),
+          };
+          onAdjusted && onAdjusted(updatedCamper);
+        };
 
         const allItems = [...(appConfig.learning_items||[]), ...(appConfig.hanhaga_items||[]), ...(appConfig.teacher_items||[])];
 
@@ -2416,6 +2366,35 @@
                 <button onClick={onClose} className="focus-ring glass-panel shrink-0 rounded-lg p-2 hover:scale-105" aria-label="Close">
                   <X size={18} />
                 </button>
+              </div>
+
+              {/* Quick Points Adjustment */}
+              <div className="border-b line-border p-4">
+                <p className="muted-text mb-2 text-xs font-extrabold uppercase tracking-widest">Quick Points Adjustment</p>
+                <div className="flex items-center gap-2">
+                  <input
+                    className="focus-ring w-24 rounded border line-border bg-transparent px-3 py-2 text-center font-bold outline-none"
+                    type="number"
+                    min="0"
+                    placeholder="Pts"
+                    value={quickAdjustAmount}
+                    onChange={(e) => setQuickAdjustAmount(e.target.value)}
+                  />
+                  <button
+                    onClick={() => adjustPoints(1)}
+                    disabled={adjusting}
+                    className="app-button focus-ring flex flex-1 items-center justify-center gap-1 rounded px-3 py-2 text-sm font-extrabold disabled:opacity-60"
+                  >
+                    <Plus size={15} /> Add Points
+                  </button>
+                  <button
+                    onClick={() => adjustPoints(-1)}
+                    disabled={adjusting}
+                    className="focus-ring flex flex-1 items-center justify-center gap-1 rounded border border-red-400/40 bg-red-500/10 px-3 py-2 text-sm font-extrabold text-red-500 disabled:opacity-60"
+                  >
+                    <X size={15} /> Deduct Points
+                  </button>
+                </div>
               </div>
 
               {/* Filter pills */}
@@ -2640,7 +2619,7 @@
         const [allCampers, setAllCampers] = useState([]);
         const [search, setSearch] = useState('');
         const [selected, setSelected] = useState(null);
-        const [date, setDate] = useState(today());
+        const [date, setDate] = useState(() => shiftDate(today(), -1)); // defaults to yesterday
         const [entry, setEntry] = useState({});
         const [loadingEntry, setLoadingEntry] = useState(false);
         const [nfcListening, setNfcListening] = useState(false);
