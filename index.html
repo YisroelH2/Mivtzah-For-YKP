@@ -271,10 +271,13 @@
       import {
         Award,
         BadgeCheck,
+        BarChart3,
         CalendarDays,
         Check,
+        ChevronDown,
         ChevronLeft,
         ChevronRight,
+        ChevronUp,
         Copy,
         CreditCard,
         Gauge,
@@ -305,7 +308,17 @@
       const CAMPER_READ_TABLE  = 'camper_profiles';
       const CAMPER_WRITE_TABLE = 'campers';
 
-      const today = () => new Date().toISOString().slice(0, 10);
+      // Local calendar date (not UTC) — using toISOString() here would grab
+      // the UTC date, which lags a day behind in timezones ahead of UTC
+      // (e.g. Israel) until UTC catches up, silently hiding "today" from
+      // admin/counselor date lists for hours after local midnight.
+      const today = () => {
+        const d = new Date();
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+      };
 
       // Shifts a 'YYYY-MM-DD' string by `delta` days. Built entirely on UTC
       // arithmetic (Date.UTC + setUTCDate) rather than local-time Date
@@ -361,6 +374,24 @@
         standard_event_threshold:   400,
         vip_event_threshold:        700,
         week_start_day:              0,   // 0=Sunday 1=Monday … 6=Saturday
+        weekly_schedule: {}, // { 'Sunday': [{id, db_key}, ...], ... } — Setup tab calendar
+      };
+
+      const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+      // Which items a camper marks themselves (Hanhagos/personal choices) vs.
+      // which are marked by a counselor/teacher (Chitas/official tracking).
+      // Derived from category membership rather than a stored per-item field,
+      // so existing items keep working unchanged: hanhaga_items are always
+      // camper-marked (see CamperDashboard), learning_items/teacher_items are
+      // always counselor/teacher-marked (see TeacherPortal/ChitasClubPortal).
+      function itemMarkType(dbKey, cfg) {
+        const c = cfg || DEFAULT_CONFIG;
+        return (c.hanhaga_items || []).some((i) => i.db_key === dbKey) ? 'camper' : 'counselor';
+      }
+      const MARK_TYPE_STYLES = {
+        camper:    { border: 'border-violet-400/40', bg: 'bg-violet-500/10', text: 'text-violet-500', dot: 'bg-violet-500', label: '🙋 Camper Marks' },
+        counselor: { border: 'border-sky-400/40',     bg: 'bg-sky-500/10',   text: 'text-sky-500',    dot: 'bg-sky-500',    label: '🧑‍🏫 Counselor/Teacher Marks' },
       };
 
       // Known existing columns in daily_entries — anything outside this set
@@ -618,7 +649,7 @@
             </div>
             {children}
             <div className="mx-auto mt-8 max-w-7xl px-1 text-center">
-              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V44.1.1</p>
+              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V45.0.0</p>
               <p className="muted-text mt-1 text-xs font-semibold opacity-60">Copyright 2026 HINENI SYSTEMS</p>
             </div>
           </main>
@@ -1867,7 +1898,7 @@
       }
 
       function AdminDashboard() {
-        const [tab, setTab] = useState('dashboard'); // 'dashboard' | 'roster' | 'setup'
+        const [tab, setTab] = useState('dashboard'); // 'dashboard' | 'roster' | 'stats' | 'setup'
         const toast = useToast();
         const [campers, setCampers] = useState([]);
         const [appConfig, setAppConfig] = useState(DEFAULT_CONFIG);
@@ -1879,6 +1910,12 @@
         const [rosterSearch, setRosterSearch] = useState('');
         const [accessSearch, setAccessSearch] = useState('');
         const [historyCamper, setHistoryCamper] = useState(null);
+
+        // Stats tab — which day's logging completion to show, and the set of
+        // camper IDs that already have a daily_entries row for that day.
+        const [statsDate, setStatsDate] = useState(() => today());
+        const [statsLoggedIds, setStatsLoggedIds] = useState([]);
+        const [statsLoading, setStatsLoading] = useState(false);
 
         // Registration state
         const [newCamper, setNewCamper] = useState({ name: '', nfc_id: '' });
@@ -1916,6 +1953,21 @@
 
         useEffect(() => { load(); }, []);
 
+        // Loads which campers already have a daily_entries row for statsDate,
+        // for the Stats tab's "logged today" tally. Only fetches while that
+        // tab is actually visible.
+        useEffect(() => {
+          if (tab !== 'stats') return;
+          let cancelled = false;
+          setStatsLoading(true);
+          supabase.from('daily_entries').select('camper_id').eq('entry_date', statsDate).then(({ data }) => {
+            if (cancelled) return;
+            setStatsLoggedIds((data || []).map((r) => r.camper_id));
+            setStatsLoading(false);
+          });
+          return () => { cancelled = true; };
+        }, [tab, statsDate]);
+
         // Shared search predicate for the roster — matches name, NFC ID, bunk, or class.
         const rosterMatches = (c) => {
           if (!rosterSearch) return true;
@@ -1947,6 +1999,25 @@
         const vip = campers.filter((c) => Number(c.weekly_points) >= Number(appConfig.vip_event_threshold ?? 700));
         const standard = campers.filter((c) => Number(c.weekly_points) >= Number(appConfig.standard_event_threshold ?? 400) && Number(c.weekly_points) < Number(appConfig.vip_event_threshold ?? 700));
         const notEligible = campers.filter((c) => Number(c.weekly_points) < Number(appConfig.standard_event_threshold ?? 400));
+
+        // ── Stats tab derived numbers ─────────────────────────────────────
+        const statsLoggedSet = useMemo(() => new Set(statsLoggedIds), [statsLoggedIds]);
+        const loggedCampers = campers.filter((c) => statsLoggedSet.has(c.id));
+        const notLoggedCampers = campers.filter((c) => !statsLoggedSet.has(c.id));
+        const loggedPct = campers.length ? Math.round((loggedCampers.length / campers.length) * 100) : 0;
+        const avgWeeklyPoints = campers.length
+          ? Math.round(campers.reduce((s, c) => s + Number(c.weekly_points || 0), 0) / campers.length)
+          : 0;
+        const bunkStats = useMemo(() => {
+          const map = {};
+          campers.forEach((c) => {
+            const key = c.bunk || 'Unassigned';
+            if (!map[key]) map[key] = { total: 0, logged: 0 };
+            map[key].total += 1;
+            if (statsLoggedSet.has(c.id)) map[key].logged += 1;
+          });
+          return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0]));
+        }, [campers, statsLoggedSet]);
 
         // ── NFC scan for registration ───────────────────────────────────────
         const startRegNfcScan = async () => {
@@ -2076,8 +2147,12 @@
             <div className="mx-auto grid max-w-7xl gap-5 pb-24">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h1 className="text-3xl font-extrabold">{tab === 'dashboard' ? 'Camper Dashboard' : tab === 'roster' ? 'Camper Roster' : 'Setup & Configuration'}</h1>
-                  <p className="muted-text font-semibold">{tab === 'dashboard' ? 'Event eligibility and daily corrections.' : tab === 'roster' ? 'Full roster, registration, and card assignment.' : 'Cards, accounts, imports, and app-wide rules.'}</p>
+                  <h1 className="text-3xl font-extrabold">
+                    {tab === 'dashboard' ? 'Camper Dashboard' : tab === 'roster' ? 'Camper Roster' : tab === 'stats' ? 'Data Tracking Stats' : 'Setup & Configuration'}
+                  </h1>
+                  <p className="muted-text font-semibold">
+                    {tab === 'dashboard' ? 'Event eligibility and daily corrections.' : tab === 'roster' ? 'Full roster, registration, and card assignment.' : tab === 'stats' ? 'Live daily logging completion and roster breakdowns.' : 'Cards, accounts, imports, and app-wide rules.'}
+                  </p>
                 </div>
                 <IconButton icon={RefreshCw} label="Refresh data" onClick={load} className={loading ? 'animate-spin' : ''} />
               </div>
@@ -2103,24 +2178,6 @@
                 <AccessList title="Standard Event Access" icon={BadgeCheck} campers={standard.filter(accessMatches)} onSelect={setHistoryCamper} />
                 <AccessList title="Not Eligible" icon={X} campers={notEligible.filter(accessMatches)} onSelect={setHistoryCamper} />
               </section>
-
-              {historyCamper && (
-                <CamperHistoryModal
-                  camper={historyCamper}
-                  appConfig={appConfig}
-                  periodStart={periodStart}
-                  periodEnd={periodEnd}
-                  toast={toast}
-                  onClose={() => setHistoryCamper(null)}
-                  onAdjusted={(updatedCamper) => {
-                    // Instant feedback in the modal + roster, no page reload —
-                    // then quietly re-sync everything else from the source of truth.
-                    setHistoryCamper(updatedCamper);
-                    setCampers((prev) => prev.map((c) => c.id === updatedCamper.id ? { ...c, ...updatedCamper } : c));
-                    load();
-                  }}
-                />
-              )}
 
               </>)}
 
@@ -2248,6 +2305,85 @@
 
               </>)}
 
+              {tab === 'stats' && (<>
+
+              {/* ── Daily logging completion ── */}
+              <section className="glass-panel rounded-lg p-5">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <h2 className="flex items-center gap-2 text-xl font-extrabold"><BarChart3 className="accent-text" /> Data Tracking Stats</h2>
+                  <label className="glass-panel flex items-center gap-2 rounded-lg px-3 py-2">
+                    <CalendarDays size={16} className="muted-text shrink-0" />
+                    <input
+                      type="date"
+                      value={statsDate}
+                      onChange={(e) => setStatsDate(e.target.value)}
+                      className="bg-transparent text-sm font-bold outline-none"
+                    />
+                  </label>
+                </div>
+
+                <div className="mb-5 rounded-xl border line-border accent-bg p-5 text-center">
+                  <p className="text-4xl font-extrabold shimmer-text">
+                    {statsLoading ? '…' : `${loggedCampers.length} / ${campers.length}`}
+                  </p>
+                  <p className="muted-text mt-1 text-sm font-bold uppercase tracking-widest">
+                    Campers Logged — {formatDateHuman(statsDate)}
+                  </p>
+                  <div className="mx-auto mt-3 h-2 w-full max-w-sm overflow-hidden rounded-full bg-black/10">
+                    <div className="h-full rounded-full app-button transition-all" style={{ width: `${loggedPct}%` }} />
+                  </div>
+                  <p className="muted-text mt-1 text-xs font-semibold">{loggedPct}% complete</p>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <StatTile label="Total Campers" value={campers.length} icon={Users} />
+                  <StatTile label="Avg Weekly Pts" value={avgWeeklyPoints} icon={Gauge} />
+                  <StatTile label="VIP Eligible" value={vip.length} icon={Sparkles} />
+                  <StatTile label="Standard Eligible" value={standard.length} icon={BadgeCheck} />
+                </div>
+              </section>
+
+              {/* ── Logged by bunk ── */}
+              <section className="glass-panel rounded-lg p-5">
+                <h2 className="mb-4 flex items-center gap-2 text-lg font-extrabold"><Users className="accent-text" /> Logged by Bunk</h2>
+                {bunkStats.length === 0 && <p className="muted-text text-sm font-semibold">No campers on the roster yet.</p>}
+                <div className="grid gap-2.5">
+                  {bunkStats.map(([bunkName, s]) => (
+                    <div key={bunkName} className="flex items-center gap-3">
+                      <span className="w-32 shrink-0 truncate text-sm font-bold sm:w-44">{bunkName}</span>
+                      <div className="h-2 flex-1 overflow-hidden rounded-full bg-black/10">
+                        <div className="h-full rounded-full app-button" style={{ width: `${s.total ? Math.round((s.logged / s.total) * 100) : 0}%` }} />
+                      </div>
+                      <span className="w-14 shrink-0 text-right text-xs font-extrabold">{s.logged}/{s.total}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              {/* ── Not yet logged ── */}
+              <section className="glass-panel rounded-lg p-5">
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="text-lg font-extrabold">Not Yet Logged</h2>
+                  <span className="accent-bg rounded-full px-2.5 py-0.5 text-xs font-extrabold">{notLoggedCampers.length}</span>
+                </div>
+                {statsLoading && <p className="muted-text text-sm font-semibold">Loading…</p>}
+                {!statsLoading && notLoggedCampers.length === 0 && <p className="muted-text text-sm font-semibold">Everyone's logged for this day ✓</p>}
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {!statsLoading && notLoggedCampers.map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => setHistoryCamper(c)}
+                      className="focus-ring flex items-center justify-between rounded border line-border px-3 py-2 text-left transition hover:accent-bg"
+                    >
+                      <span className="truncate text-sm font-bold">{c.name}</span>
+                      <span className="muted-text ml-2 shrink-0 text-xs">{c.bunk || '—'}</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              </>)}
+
               {tab === 'setup' && (<>
 
               {/* ── Cards & Accounts ── */}
@@ -2272,6 +2408,24 @@
 
               </>)}
 
+              {historyCamper && (
+                <CamperHistoryModal
+                  camper={historyCamper}
+                  appConfig={appConfig}
+                  periodStart={periodStart}
+                  periodEnd={periodEnd}
+                  toast={toast}
+                  onClose={() => setHistoryCamper(null)}
+                  onAdjusted={(updatedCamper) => {
+                    // Instant feedback in the modal + roster, no page reload —
+                    // then quietly re-sync everything else from the source of truth.
+                    setHistoryCamper(updatedCamper);
+                    setCampers((prev) => prev.map((c) => c.id === updatedCamper.id ? { ...c, ...updatedCamper } : c));
+                    load();
+                  }}
+                />
+              )}
+
             </div>
 
             {/* ── Bottom tab nav ── */}
@@ -2290,6 +2444,13 @@
                 >
                   <Users size={22} strokeWidth={tab === 'roster' ? 2.5 : 2} />
                   <span className="text-xs font-extrabold">Camper Roster</span>
+                </button>
+                <button
+                  onClick={() => setTab('stats')}
+                  className={classNames('focus-ring flex flex-1 flex-col items-center gap-1 rounded-xl py-2 transition', tab === 'stats' ? 'accent-text' : 'muted-text')}
+                >
+                  <BarChart3 size={22} strokeWidth={tab === 'stats' ? 2.5 : 2} />
+                  <span className="text-xs font-extrabold">Stats</span>
                 </button>
                 <button
                   onClick={() => setTab('setup')}
@@ -2346,10 +2507,31 @@
         const hanhagaMax = (draft.hanhaga_items||[]).length * Number(draft.hanhaga_bonus_per_item||5);
         const teacherTotal = (draft.teacher_items||[]).reduce((s,i)=>s+Number(i.points||0),0);
 
+        // ── Weekly Checklist Schedule (Setup tab calendar) ──────────────────
+        const [scheduleAddOpenDay, setScheduleAddOpenDay] = useState(null);
+        const allDraftItems = [...(draft.learning_items||[]), ...(draft.hanhaga_items||[]), ...(draft.teacher_items||[])];
+        const addScheduleItem = (day, item) => {
+          const entry = { id: `${day}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, db_key: item.db_key };
+          const prevDay = (draft.weekly_schedule || {})[day] || [];
+          setDraft({ ...draft, weekly_schedule: { ...(draft.weekly_schedule || {}), [day]: [...prevDay, entry] } });
+        };
+        const removeScheduleItem = (day, entryId) => {
+          const prevDay = (draft.weekly_schedule || {})[day] || [];
+          setDraft({ ...draft, weekly_schedule: { ...(draft.weekly_schedule || {}), [day]: prevDay.filter((e) => e.id !== entryId) } });
+        };
+
         return (
           <div className="grid gap-6">
-            {/* ── Learning Items ── */}
-            <div>
+            {/* ── Counselor/Teacher Marks: Learning + Teacher Items ── */}
+            <div className={classNames('rounded-xl border p-4', MARK_TYPE_STYLES.counselor.border, MARK_TYPE_STYLES.counselor.bg)}>
+              <div className="mb-4 flex items-center gap-2">
+                <span className={classNames('h-2.5 w-2.5 shrink-0 rounded-full', MARK_TYPE_STYLES.counselor.dot)} />
+                <span className={classNames('text-xs font-extrabold uppercase tracking-widest', MARK_TYPE_STYLES.counselor.text)}>
+                  {MARK_TYPE_STYLES.counselor.label} · Official Tracking (Chitas)
+                </span>
+              </div>
+
+              {/* Learning Items */}
               <div className="mb-3 flex items-center justify-between">
                 <div>
                   <h3 className="font-extrabold">📚 Learning Items</h3>
@@ -2357,9 +2539,9 @@
                 </div>
                 <button onClick={addLearning} className="app-button focus-ring inline-flex items-center gap-1 rounded px-3 py-2 text-sm font-extrabold"><Plus size={14}/> Add</button>
               </div>
-              <div className="grid gap-2">
+              <div className="mb-5 grid gap-2">
                 {(draft.learning_items||[]).map((item, idx) => (
-                  <div key={item.db_key} className="glass-panel flex items-center gap-3 rounded-lg p-3">
+                  <div key={item.db_key} className={classNames('glass-panel flex items-center gap-3 rounded-lg border-l-4 p-3', MARK_TYPE_STYLES.counselor.border)}>
                     <input className="flex-1 bg-transparent font-semibold outline-none text-sm" value={item.label} onChange={(e)=>updateLearning(idx,'label',e.target.value)} placeholder="Label" />
                     <div className="flex items-center gap-1">
                       <input className="w-16 rounded border line-border bg-transparent px-2 py-1 text-center font-extrabold text-sm" type="number" value={item.points} onChange={(e)=>updateLearning(idx,'points',e.target.value)} />
@@ -2369,10 +2551,40 @@
                   </div>
                 ))}
               </div>
+
+              {/* Teacher Items */}
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <h3 className="font-extrabold">🎓 Teacher Items</h3>
+                  <p className="muted-text text-xs">Items teachers mark for their class · Total: <strong>{teacherTotal} pts</strong></p>
+                </div>
+                <button onClick={addTeacher} className="app-button focus-ring inline-flex items-center gap-1 rounded px-3 py-2 text-sm font-extrabold"><Plus size={14}/> Add</button>
+              </div>
+              {(draft.teacher_items||[]).length === 0 && (
+                <p className="muted-text text-sm font-semibold glass-panel rounded-lg px-4 py-3">No teacher items yet. Add items here that teachers can mark for students (e.g. "Tested on Maamar").</p>
+              )}
+              <div className="grid gap-2">
+                {(draft.teacher_items||[]).map((item, idx) => (
+                  <div key={item.db_key} className={classNames('glass-panel flex items-center gap-3 rounded-lg border-l-4 p-3', MARK_TYPE_STYLES.counselor.border)}>
+                    <input className="flex-1 bg-transparent font-semibold outline-none text-sm" value={item.label} onChange={(e)=>updateTeacher(idx,'label',e.target.value)} placeholder="Label" />
+                    <div className="flex items-center gap-1">
+                      <input className="w-16 rounded border line-border bg-transparent px-2 py-1 text-center font-extrabold text-sm" type="number" value={item.points||0} onChange={(e)=>updateTeacher(idx,'points',e.target.value)} />
+                      <span className="muted-text text-xs">pts</span>
+                    </div>
+                    <button onClick={()=>removeTeacher(idx)} className="text-red-500 shrink-0"><Trash2 size={14}/></button>
+                  </div>
+                ))}
+              </div>
             </div>
 
-            {/* ── Hanhagos ── */}
-            <div>
+            {/* ── Camper Marks: Hanhagos ── */}
+            <div className={classNames('rounded-xl border p-4', MARK_TYPE_STYLES.camper.border, MARK_TYPE_STYLES.camper.bg)}>
+              <div className="mb-4 flex items-center gap-2">
+                <span className={classNames('h-2.5 w-2.5 shrink-0 rounded-full', MARK_TYPE_STYLES.camper.dot)} />
+                <span className={classNames('text-xs font-extrabold uppercase tracking-widest', MARK_TYPE_STYLES.camper.text)}>
+                  {MARK_TYPE_STYLES.camper.label} · Personal Choices
+                </span>
+              </div>
               <div className="mb-3 flex items-center justify-between">
                 <div>
                   <h3 className="font-extrabold">✋ Daily Hanhagos</h3>
@@ -2386,7 +2598,7 @@
               </div>
               <div className="grid gap-2">
                 {(draft.hanhaga_items||[]).map((item, idx) => (
-                  <div key={item.db_key} className="glass-panel flex items-center gap-3 rounded-lg p-3">
+                  <div key={item.db_key} className={classNames('glass-panel flex items-center gap-3 rounded-lg border-l-4 p-3', MARK_TYPE_STYLES.camper.border)}>
                     <input className="flex-1 bg-transparent font-semibold outline-none text-sm" value={item.label} onChange={(e)=>updateHanhaga(idx,'label',e.target.value)} placeholder="Label" />
                     <button onClick={()=>removeHanhaga(idx)} className="text-red-500 shrink-0"><Trash2 size={14}/></button>
                   </div>
@@ -2394,29 +2606,60 @@
               </div>
             </div>
 
-            {/* ── Teacher Items ── */}
+            {/* ── Weekly Checklist Schedule ── */}
             <div>
-              <div className="mb-3 flex items-center justify-between">
-                <div>
-                  <h3 className="font-extrabold">🎓 Teacher Items</h3>
-                  <p className="muted-text text-xs">Items teachers mark for their class · Total: <strong>{teacherTotal} pts</strong></p>
-                </div>
-                <button onClick={addTeacher} className="app-button focus-ring inline-flex items-center gap-1 rounded px-3 py-2 text-sm font-extrabold"><Plus size={14}/> Add</button>
-              </div>
-              {(draft.teacher_items||[]).length === 0 && (
-                <p className="muted-text text-sm font-semibold glass-panel rounded-lg px-4 py-3">No teacher items yet. Add items here that teachers can mark for students (e.g. "Tested on Maamar").</p>
-              )}
-              <div className="grid gap-2">
-                {(draft.teacher_items||[]).map((item, idx) => (
-                  <div key={item.db_key} className="glass-panel flex items-center gap-3 rounded-lg p-3">
-                    <input className="flex-1 bg-transparent font-semibold outline-none text-sm" value={item.label} onChange={(e)=>updateTeacher(idx,'label',e.target.value)} placeholder="Label" />
-                    <div className="flex items-center gap-1">
-                      <input className="w-16 rounded border line-border bg-transparent px-2 py-1 text-center font-extrabold text-sm" type="number" value={item.points||0} onChange={(e)=>updateTeacher(idx,'points',e.target.value)} />
-                      <span className="muted-text text-xs">pts</span>
+              <h3 className="mb-1 font-extrabold">📅 Weekly Checklist Schedule</h3>
+              <p className="muted-text mb-3 text-xs font-semibold">Attach checklist items to specific days of the week. Click "+ Add" and pick an item as many times as you need — e.g. Mikvah twice on Friday.</p>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+                {WEEKDAYS.map((day) => {
+                  const dayItems = (draft.weekly_schedule || {})[day] || [];
+                  return (
+                    <div key={day} className="glass-panel rounded-lg p-3">
+                      <p className="mb-2 text-center text-xs font-extrabold uppercase tracking-widest">{day}</p>
+                      <div className="grid min-h-[1.5rem] gap-1.5">
+                        {dayItems.length === 0 && <p className="muted-text text-center text-[11px] font-semibold">No items</p>}
+                        {dayItems.map((entry) => {
+                          const item = allDraftItems.find((i) => i.db_key === entry.db_key);
+                          const style = item ? MARK_TYPE_STYLES[itemMarkType(entry.db_key, draft)] : null;
+                          return (
+                            <div
+                              key={entry.id}
+                              className={classNames(
+                                'flex items-center justify-between gap-1 rounded border px-2 py-1 text-[11px] font-bold',
+                                style ? `${style.border} ${style.bg}` : 'line-border'
+                              )}
+                            >
+                              <span className="truncate">{item ? item.label : '⚠ removed item'}</span>
+                              <button onClick={() => removeScheduleItem(day, entry.id)} className="shrink-0 text-red-500"><X size={11} /></button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {scheduleAddOpenDay === day ? (
+                        <div className="mt-2 grid max-h-40 gap-1 overflow-y-auto">
+                          {allDraftItems.length === 0 && <p className="muted-text text-[11px] font-semibold">No items configured yet.</p>}
+                          {allDraftItems.map((item, i) => (
+                            <button
+                              key={`${item.db_key}_${i}`}
+                              onClick={() => addScheduleItem(day, item)}
+                              className="focus-ring truncate rounded border line-border px-2 py-1 text-left text-[11px] font-bold transition hover:accent-bg"
+                            >
+                              {item.label}
+                            </button>
+                          ))}
+                          <button onClick={() => setScheduleAddOpenDay(null)} className="muted-text mt-1 text-[11px] font-bold">Close</button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setScheduleAddOpenDay(day)}
+                          className="focus-ring mt-2 flex w-full items-center justify-center gap-1 rounded border line-border py-1 text-[11px] font-extrabold transition hover:accent-bg"
+                        >
+                          <Plus size={11} /> Add
+                        </button>
+                      )}
                     </div>
-                    <button onClick={()=>removeTeacher(idx)} className="text-red-500 shrink-0"><Trash2 size={14}/></button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
@@ -2469,6 +2712,74 @@
             <button className="app-button focus-ring inline-flex items-center gap-2 rounded px-5 py-3 font-extrabold" onClick={() => onSave(draft, wStart, wEnd)}>
               <Save size={18} /> Save All Config
             </button>
+          </div>
+        );
+      }
+
+      // ── Small stat tile for the admin Stats tab ──────────────────────────
+      function StatTile({ label, value, icon: Icon }) {
+        return (
+          <div className="glass-panel rounded-lg p-4 text-center">
+            {Icon && <Icon className="accent-text mx-auto mb-1" size={18} />}
+            <p className="text-2xl font-extrabold">{value}</p>
+            <p className="muted-text text-xs font-bold uppercase tracking-widest">{label}</p>
+          </div>
+        );
+      }
+
+      // ── Collapsible bunk roster — lets staff tap a camper's name directly
+      // instead of typing a search query. Groups the given camper list by
+      // bunk (falling back to class, then "Unassigned"), each collapsed by
+      // default with its own show/hide toggle.
+      function BunkRosterBrowser({ campers, onSelect }) {
+        const [expanded, setExpanded] = useState({});
+
+        const groups = useMemo(() => {
+          const map = {};
+          campers.forEach((c) => {
+            const key = c.bunk || c.class || 'Unassigned';
+            (map[key] = map[key] || []).push(c);
+          });
+          return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0]));
+        }, [campers]);
+
+        if (groups.length === 0) return <p className="muted-text text-sm font-semibold">No campers to show.</p>;
+
+        return (
+          <div className="grid gap-2">
+            {groups.map(([bunkName, list]) => {
+              const isOpen = !!expanded[bunkName];
+              return (
+                <div key={bunkName} className="glass-panel overflow-hidden rounded-lg">
+                  <button
+                    type="button"
+                    onClick={() => setExpanded((prev) => ({ ...prev, [bunkName]: !prev[bunkName] }))}
+                    className="focus-ring flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left"
+                  >
+                    <span className="flex min-w-0 items-center gap-2 font-bold">
+                      <Users size={14} className="accent-text shrink-0" />
+                      <span className="truncate">{bunkName}</span>
+                      <span className="accent-bg shrink-0 rounded-full px-2 py-0.5 text-xs font-extrabold">{list.length}</span>
+                    </span>
+                    {isOpen ? <ChevronUp size={16} className="muted-text shrink-0" /> : <ChevronDown size={16} className="muted-text shrink-0" />}
+                  </button>
+                  {isOpen && (
+                    <div className="grid gap-1.5 border-t line-border p-3 sm:grid-cols-2">
+                      {list.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => onSelect(c)}
+                          className="focus-ring truncate rounded border line-border px-3 py-2 text-left text-sm font-bold transition hover:accent-bg"
+                        >
+                          {c.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         );
       }
@@ -2760,8 +3071,9 @@
                           <div className="mb-2 grid gap-1.5">
                             {checked.map((item) => {
                               const isEditing = editingItem?.date === d && editingItem?.db_key === item.db_key;
+                              const markStyle = MARK_TYPE_STYLES[itemMarkType(item.db_key, appConfig)];
                               return (
-                                <div key={item.db_key} className="glass-panel flex items-center justify-between gap-2 rounded-lg px-3 py-2">
+                                <div key={item.db_key} className={classNames('glass-panel flex items-center justify-between gap-2 rounded-lg border-l-4 px-3 py-2', markStyle.border)}>
                                   {isEditing ? (
                                     <>
                                       <span className="text-sm font-semibold">{item.label}</span>
@@ -3172,15 +3484,24 @@
                       {nfcListening ? 'Tap card…' : 'Scan Card'}
                     </button>
                   </div>
-                  {search && filteredCampers.length === 0 && <p className="muted-text text-sm font-semibold">No students found.</p>}
-                  <div className="grid gap-2 max-h-80 overflow-y-auto">
-                    {filteredCampers.map((c) => (
-                      <button key={c.id} onClick={() => selectCamper(c)} className="glass-panel focus-ring flex items-center justify-between rounded-lg px-4 py-3 text-left hover:scale-[1.01]">
-                        <span className="font-bold">{c.name}</span>
-                        <span className="muted-text text-sm">{displayValue(c.weekly_points)} pts this week</span>
-                      </button>
-                    ))}
-                  </div>
+                  {search ? (
+                    <>
+                      {filteredCampers.length === 0 && <p className="muted-text text-sm font-semibold">No students found.</p>}
+                      <div className="grid gap-2 max-h-80 overflow-y-auto">
+                        {filteredCampers.map((c) => (
+                          <button key={c.id} onClick={() => selectCamper(c)} className="glass-panel focus-ring flex items-center justify-between rounded-lg px-4 py-3 text-left hover:scale-[1.01]">
+                            <span className="font-bold">{c.name}</span>
+                            <span className="muted-text text-sm">{displayValue(c.weekly_points)} pts this week</span>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="max-h-80 overflow-y-auto">
+                      <p className="muted-text mb-2 text-xs font-extrabold uppercase tracking-widest">Browse by Bunk</p>
+                      <BunkRosterBrowser campers={campers} onSelect={selectCamper} />
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="grid gap-4">
@@ -3322,7 +3643,7 @@
             setChecking(true);
             const [{ data: cfgRow }, { data: roster }] = await Promise.all([
               supabase.from('mivtza_config').select('config_json, club_cards').limit(1).maybeSingle(),
-              supabase.from(CAMPER_READ_TABLE).select('id,name,nfc_id'),
+              supabase.from(CAMPER_READ_TABLE).select('id,name,nfc_id,bunk,class'),
             ]);
             setAllCampers(roster || []);
 
@@ -3554,6 +3875,15 @@
                           </button>
                         </div>
                       ))}
+                    </div>
+                  )}
+                  {!search && (
+                    <div className="mt-3 max-h-64 overflow-y-auto">
+                      <p className="muted-text mb-2 text-xs font-extrabold uppercase tracking-widest">Browse by Bunk</p>
+                      <BunkRosterBrowser
+                        campers={allCampers.filter((c) => !sessionQueue.some((q) => q.id === c.id))}
+                        onSelect={(c) => addToQueue(c)}
+                      />
                     </div>
                   )}
                 </div>
