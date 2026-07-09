@@ -1118,6 +1118,13 @@
         // don't lock every camper out of backmarking unexpectedly — treat it
         // as effectively unlimited until an admin explicitly sets a limit.
         const [allowedBackDays, setAllowedBackDays] = useState(3650);
+        // True when this browser also holds an authenticated Supabase Auth
+        // session matching a teacher_profiles email — e.g. a counselor who
+        // is signed in as staff but tapped their own personal camper NFC
+        // card to check their progress. Lets us tell "an actual camper
+        // marking themselves" apart from "staff, incidentally viewed via
+        // the camper card" so only the former is held to allowedBackDays.
+        const [isStaffSession, setIsStaffSession] = useState(false);
         const toast = useToast();
         const status = normalizeStatus(camper.card_status);
 
@@ -1150,6 +1157,26 @@
           });
         }, []);
 
+        // Independently check for an active staff session, same lookup
+        // TeacherPortal's login path uses (Supabase Auth session email ->
+        // teacher_profiles). This is deliberately separate from how
+        // `camper` got here (an NFC card match) so it catches staff who
+        // are signed in as staff in this browser but are viewing their own
+        // camper card, not just staff routed in through TeacherPortal.
+        useEffect(() => {
+          let cancelled = false;
+          supabase.auth.getSession().then(async ({ data: { session } }) => {
+            if (!session?.user?.email) return;
+            const { data } = await supabase
+              .from('teacher_profiles')
+              .select('email')
+              .ilike('email', session.user.email)
+              .maybeSingle();
+            if (!cancelled && data) setIsStaffSession(true);
+          });
+          return () => { cancelled = true; };
+        }, []);
+
         // (Re)load today's — or whichever date is selected — existing entry
         // once config is ready, and again any time the date arrows change it.
         useEffect(() => {
@@ -1169,7 +1196,9 @@
         const score = calculateScore(entry, appConfig);
 
         // ── Role-based date status (campers only — counselors/teachers in
-        // TeacherPortal have zero such restrictions by design) ──────────────
+        // TeacherPortal have zero such restrictions by design, and the same
+        // now holds here via isStaffSession for staff viewing their own
+        // camper card) ────────────────────────────────────────────────────
         const diff = daysBeforeToday(date);       // >0 past, 0 today, <0 future
         const isToday = diff === 0;
         const isYesterday = diff === 1;
@@ -1179,7 +1208,11 @@
         // Shabbat exception: on Sundays, guarantee at least a 2-day lookback
         // (Friday + Saturday) regardless of the configured limit, since
         // campers can't mark those days in real time over Shabbat.
-        const effectiveAllowedBackDays = isTodaySunday() ? Math.max(allowedBackDays, 2) : allowedBackDays;
+        // Staff bypass allowed_back_marking_days entirely — same generous
+        // fail-open default (3650) used above while config is still loading.
+        const effectiveAllowedBackDays = isStaffSession
+          ? 3650
+          : (isTodaySunday() ? Math.max(allowedBackDays, 2) : allowedBackDays);
 
         const isLocked = isPast && diff > effectiveAllowedBackDays;
         // Today is now categorically locked for campers — they mark
@@ -1203,6 +1236,7 @@
             today: today(),
             rawAllowedBackDays: allowedBackDays,
             isSunday: isTodaySunday(),
+            isStaffSession,
             effectiveAllowedBackDays,
             minAllowedDate,
             maxAllowedDate,
@@ -1211,7 +1245,7 @@
             atOldestAllowed,
             atNewestAllowed,
           });
-        }, [configLoaded, date, allowedBackDays]);
+        }, [configLoaded, date, allowedBackDays, isStaffSession]);
 
         // Defense-in-depth: force `date` itself back inside [min, max] any
         // time it, or the bounds, change — not just when the arrows are
