@@ -260,6 +260,38 @@
       @keyframes toast-out { from { opacity:1; transform:translateY(0) scale(1); }      to { opacity:0; transform:translateY(12px) scale(.96); } }
       .toast-enter { animation: toast-in  .28s cubic-bezier(.16,1,.3,1) forwards; }
       .toast-leave { animation: toast-out .22s ease-in forwards; }
+
+      /* ── Event Scanner Portal ─────────────────────────────────────────────
+         Deliberately independent of the [data-theme] card-tier variables
+         above — this overlay is always dark/sleek regardless of which admin
+         is running it, so its animations get their own keyframe names. ── */
+      @keyframes scanner-ring {
+        0%   { transform: scale(.8); opacity: .8; }
+        100% { transform: scale(1.9); opacity: 0; }
+      }
+      @keyframes scanner-pop {
+        0%   { opacity: 0; transform: scale(.82); }
+        100% { opacity: 1; transform: scale(1); }
+      }
+      @keyframes scanner-vip-gradient {
+        0%   { background-position: 0% 50%; }
+        50%  { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+      }
+      @keyframes scanner-decline-shake {
+        0%, 100% { transform: translateX(0); }
+        20%      { transform: translateX(-14px); }
+        40%      { transform: translateX(12px); }
+        60%      { transform: translateX(-8px); }
+        80%      { transform: translateX(6px); }
+      }
+      .scanner-ring { animation: scanner-ring 2s ease-out infinite; }
+      .scanner-pop { animation: scanner-pop .35s cubic-bezier(.2,1.4,.4,1) both; }
+      .scanner-vip-bg {
+        background-size: 220% 220%;
+        animation: scanner-vip-gradient 4s ease infinite;
+      }
+      .scanner-decline-shake { animation: scanner-decline-shake .5s ease-in-out; }
     </style>
   </head>
   <body>
@@ -280,6 +312,7 @@
         ChevronUp,
         Copy,
         CreditCard,
+        Crown,
         Gauge,
         KeyRound,
         Lock,
@@ -649,7 +682,7 @@
             </div>
             {children}
             <div className="mx-auto mt-8 max-w-7xl px-1 text-center">
-              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V45.0.0</p>
+              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V5.0.1</p>
               <p className="muted-text mt-1 text-xs font-semibold opacity-60">Copyright 2026 HINENI SYSTEMS</p>
             </div>
           </main>
@@ -1897,6 +1930,208 @@
         );
       }
 
+      // ── Event Scanner Portal ─────────────────────────────────────────────
+      // Reads the offline eligibility cache an admin saved to localStorage via
+      // the "Launch Event Scanner" button (see AdminDashboard.launchEventScanner)
+      // and resolves each scan against it entirely client-side — no network
+      // calls here, so the portal keeps working with no connectivity at the
+      // event door. Card lookups are resolved in this priority order: admin
+      // cards first (always an override, regardless of event eligibility),
+      // then camper cards — where card_status ("Gold"/"Platinum"/"Black")
+      // picks Standard vs. VIP styling and weekly-points eligibility gates
+      // approval vs. decline.
+      const SCANNER_CACHE_KEY = 'mivtza_scanner_cache';
+      const SCANNER_RESULT_MS = 3000;
+
+      const SCANNER_SCREENS = {
+        standard: {
+          bg: 'bg-gradient-to-br from-emerald-600 via-emerald-500 to-emerald-600',
+          icon: Check,
+          headline: 'ACCESS GRANTED',
+        },
+        vip: {
+          bg: 'scanner-vip-bg bg-gradient-to-br from-amber-600 via-yellow-300 to-amber-500 text-amber-950',
+          icon: Crown,
+          headline: 'VIP ACCESS GRANTED',
+        },
+        admin: {
+          bg: 'bg-slate-950',
+          icon: ShieldCheck,
+          headline: 'SYSTEM OVERRIDE',
+        },
+        declined: {
+          bg: 'bg-gradient-to-br from-red-700 via-red-600 to-red-700',
+          icon: X,
+          headline: 'ACCESS DENIED',
+        },
+      };
+
+      function EventScannerPortal({ onExit }) {
+        const [cache, setCache] = useState(null);
+        const [result, setResult] = useState(null); // null | { type, name, tier }
+        const [showManual, setShowManual] = useState(false);
+        const [manualId, setManualId] = useState('');
+        const busyRef = useRef(false);
+        const resetTimerRef = useRef(null);
+        const scanBufferRef = useRef('');
+        const keyTimerRef = useRef(null);
+        const ndefRef = useRef(null);
+
+        useEffect(() => {
+          try {
+            const raw = localStorage.getItem(SCANNER_CACHE_KEY);
+            setCache(raw ? JSON.parse(raw) : { campers: [], admins: [] });
+          } catch {
+            setCache({ campers: [], admins: [] });
+          }
+        }, []);
+
+        const handleScan = (rawId) => {
+          if (!cache || busyRef.current) return;
+          const target = normalizeNfcId(rawId);
+          if (!target) return;
+          busyRef.current = true;
+
+          const adminMatch = (cache.admins || []).find((a) => a.nfc_id === target);
+          const camperMatch = !adminMatch && (cache.campers || []).find((c) => c.nfc_id === target);
+
+          let next;
+          if (adminMatch) {
+            next = { type: 'admin', name: adminMatch.name, tier: 'Admin' };
+          } else if (!camperMatch || !camperMatch.eligible) {
+            next = { type: 'declined', name: camperMatch?.name || '', tier: camperMatch?.tier || '' };
+          } else if (camperMatch.tier === 'Gold') {
+            next = { type: 'standard', name: camperMatch.name, tier: camperMatch.tier };
+          } else {
+            next = { type: 'vip', name: camperMatch.name, tier: camperMatch.tier };
+          }
+
+          setResult(next);
+          clearTimeout(resetTimerRef.current);
+          resetTimerRef.current = setTimeout(() => {
+            setResult(null);
+            busyRef.current = false;
+          }, SCANNER_RESULT_MS);
+        };
+
+        // Keyboard-wedge NFC/barcode readers act like a keyboard typing the ID
+        // followed by Enter — mirrors the same pattern CamperCheckIn uses.
+        useEffect(() => {
+          const onKey = (e) => {
+            if (showManual) return;
+            if (e.key === 'Enter') {
+              const buf = scanBufferRef.current.trim();
+              scanBufferRef.current = '';
+              clearTimeout(keyTimerRef.current);
+              if (buf) handleScan(buf);
+            } else if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+              scanBufferRef.current += e.key;
+              clearTimeout(keyTimerRef.current);
+              keyTimerRef.current = setTimeout(() => { scanBufferRef.current = ''; }, 400);
+            }
+          };
+          document.addEventListener('keydown', onKey);
+          return () => { document.removeEventListener('keydown', onKey); clearTimeout(keyTimerRef.current); };
+        }, [showManual, cache]);
+
+        // Web NFC (Android Chrome) — taps resolve the same way as a keyboard-wedge scan.
+        useEffect(() => {
+          if (!('NDEFReader' in window) || !window.isSecureContext) return;
+          let cancelled = false;
+          (async () => {
+            try {
+              const ndef = new NDEFReader();
+              ndefRef.current = ndef;
+              ndef.onreading = (event) => { if (!cancelled && event.serialNumber) handleScan(event.serialNumber); };
+              await ndef.scan();
+            } catch {
+              // Silently ignore — the keyboard-wedge listener above still covers USB readers.
+            }
+          })();
+          return () => { cancelled = true; };
+        }, [cache]);
+
+        useEffect(() => () => clearTimeout(resetTimerRef.current), []);
+
+        const active = result ? SCANNER_SCREENS[result.type] : null;
+
+        return (
+          <div
+            className={classNames(
+              'fixed inset-0 z-[100] flex flex-col items-center justify-center overflow-hidden px-6 text-center text-white transition-colors duration-300',
+              active ? active.bg : 'bg-slate-950',
+              result?.type === 'declined' && 'scanner-decline-shake'
+            )}
+          >
+            {result?.type === 'admin' && (
+              <div className="pointer-events-none absolute inset-0">
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_30%,rgba(56,189,248,.2),transparent_60%)]" />
+                <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-sky-400/70 to-transparent" />
+                <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-sky-400/70 to-transparent" />
+              </div>
+            )}
+
+            <button
+              onClick={onExit}
+              className="focus-ring absolute right-4 top-4 z-10 inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-white/50 backdrop-blur-sm transition hover:bg-white/10 hover:text-white/90"
+            >
+              <X size={13} /> Exit Portal
+            </button>
+
+            {!result && (
+              <div className="flex flex-col items-center gap-6">
+                <div className="relative flex h-40 w-40 items-center justify-center">
+                  <span className="scanner-ring absolute inset-0 rounded-full border border-sky-400/30" />
+                  <span className="scanner-ring absolute inset-0 rounded-full border border-sky-400/20" style={{ animationDelay: '.6s' }} />
+                  <div className="relative flex h-24 w-24 items-center justify-center rounded-full bg-sky-400/10 shadow-[0_0_60px_rgba(56,189,248,.35)]">
+                    <Smartphone size={40} className="text-sky-300 animate-pulse" strokeWidth={1.5} />
+                  </div>
+                </div>
+                <p className="text-lg font-bold uppercase tracking-[0.3em] text-white/70">Ready to Scan…</p>
+
+                <button
+                  onClick={() => setShowManual((v) => !v)}
+                  className="text-xs font-semibold text-white/30 underline underline-offset-4 hover:text-white/60"
+                >
+                  {showManual ? 'Hide test input' : 'Enter card ID manually'}
+                </button>
+                {showManual && (
+                  <div className="flex gap-2">
+                    <input
+                      autoFocus
+                      value={manualId}
+                      onChange={(e) => setManualId(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && manualId.trim()) { handleScan(manualId); setManualId(''); } }}
+                      placeholder="Card ID"
+                      className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-center text-sm font-semibold text-white outline-none placeholder:text-white/30"
+                    />
+                    <button
+                      onClick={() => { if (manualId.trim()) { handleScan(manualId); setManualId(''); } }}
+                      className="rounded-lg bg-white/10 px-4 py-2 text-sm font-bold hover:bg-white/20"
+                    >
+                      Go
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {result && active && (
+              <div className="scanner-pop flex flex-col items-center gap-5">
+                <active.icon size={88} className="drop-shadow-[0_0_24px_rgba(255,255,255,.55)]" strokeWidth={1.75} />
+                {result.type !== 'declined' && (
+                  <div>
+                    <h1 className="text-4xl font-extrabold tracking-tight sm:text-5xl">{result.name || 'Unknown'}</h1>
+                    <p className="mt-2 text-lg font-bold uppercase tracking-[0.2em] opacity-80">Status: {result.tier}</p>
+                  </div>
+                )}
+                <p className="text-2xl font-black uppercase tracking-[0.15em] sm:text-3xl">{active.headline}</p>
+              </div>
+            )}
+          </div>
+        );
+      }
+
       function AdminDashboard() {
         const [tab, setTab] = useState('dashboard'); // 'dashboard' | 'roster' | 'stats' | 'setup'
         const toast = useToast();
@@ -1910,6 +2145,7 @@
         const [rosterSearch, setRosterSearch] = useState('');
         const [accessSearch, setAccessSearch] = useState('');
         const [historyCamper, setHistoryCamper] = useState(null);
+        const [scannerOpen, setScannerOpen] = useState(false);
 
         // Stats tab — which day's logging completion to show, and the set of
         // camper IDs that already have a daily_entries row for that day.
@@ -2141,6 +2377,43 @@
           }
         };
 
+        // ── Launch Event Scanner ─────────────────────────────────────────────
+        // Snapshots the current roster into localStorage — name, event
+        // eligibility (weekly points vs. the standard threshold), and card
+        // tier (Gold/Platinum/Black from card_status) — plus the admin_cards
+        // list, so EventScannerPortal can resolve every scan with zero
+        // network calls once launched.
+        const launchEventScanner = () => {
+          const standardThreshold = Number(appConfig.standard_event_threshold ?? 400);
+          let adminIds = [];
+          try { adminIds = JSON.parse(configAdminCards || '[]'); } catch {}
+
+          const camperRecords = campers
+            .filter((c) => c.nfc_id)
+            .map((c) => ({
+              nfc_id: normalizeNfcId(c.nfc_id),
+              name: c.name,
+              tier: normalizeStatus(c.card_status),
+              eligible: Number(c.weekly_points) >= standardThreshold,
+            }));
+
+          const adminRecords = adminIds
+            .filter(Boolean)
+            .map((id) => ({ nfc_id: normalizeNfcId(id), name: 'Administrator', tier: 'Admin', eligible: true }));
+
+          localStorage.setItem(SCANNER_CACHE_KEY, JSON.stringify({
+            campers: camperRecords,
+            admins: adminRecords,
+            cachedAt: new Date().toISOString(),
+          }));
+          notify(`Scanner ready — ${camperRecords.length} campers cached for offline use ✓`);
+          setScannerOpen(true);
+        };
+
+        if (scannerOpen) {
+          return <EventScannerPortal onExit={() => setScannerOpen(false)} />;
+        }
+
         return (
           <Shell admin status="Platinum">
             <ToastStack toasts={toast.toasts} remove={toast.remove} />
@@ -2154,7 +2427,16 @@
                     {tab === 'dashboard' ? 'Event eligibility and daily corrections.' : tab === 'roster' ? 'Full roster, registration, and card assignment.' : tab === 'stats' ? 'Live daily logging completion and roster breakdowns.' : 'Cards, accounts, imports, and app-wide rules.'}
                   </p>
                 </div>
-                <IconButton icon={RefreshCw} label="Refresh data" onClick={load} className={loading ? 'animate-spin' : ''} />
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={launchEventScanner}
+                    className="focus-ring group inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 px-5 py-3 text-sm font-extrabold text-amber-950 shadow-luxury transition hover:scale-[1.03]"
+                  >
+                    <ScanLine size={18} className="transition group-hover:scale-110" />
+                    Launch Event Scanner
+                  </button>
+                  <IconButton icon={RefreshCw} label="Refresh data" onClick={load} className={loading ? 'animate-spin' : ''} />
+                </div>
               </div>
 
               {tab === 'dashboard' && (<>
