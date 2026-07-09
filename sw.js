@@ -1,6 +1,6 @@
 // AmEx Mivtza Service Worker
 // Bump CACHE_NAME to force all clients to pick up the new version.
-const CACHE_NAME = 'mivtza-v50';
+const CACHE_NAME = 'mivtza-v51';
 
 // The shell files to pre-cache on install. Supabase/esm.sh calls are always
 // network-first so live data is never stale; only the app shell is cached.
@@ -54,7 +54,29 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Cache-first for same-origin shell assets (index.html, manifest.json, sw.js).
+  // Network-first for the HTML shell itself (page navigations + index.html
+  // directly) so a code fix is visible the very next time a device is
+  // online, without waiting on the browser to notice sw.js changed bytes
+  // and cycle through install/activate first. Falls back to the cache only
+  // when the network is unreachable (offline use).
+  const isShellDocument = request.mode === 'navigate' || url.pathname.endsWith('/index.html') || url.pathname.endsWith('/');
+  if (isShellDocument) {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          if (response.status === 200) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(request))
+    );
+    return;
+  }
+
+  // Cache-first for other same-origin shell assets (manifest.json, icons)
+  // — these rarely change and don't affect functional correctness.
   event.respondWith(
     caches.match(request).then((cached) => {
       if (cached) return cached;
