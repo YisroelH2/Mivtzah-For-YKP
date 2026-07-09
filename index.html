@@ -1698,145 +1698,6 @@
         );
       }
 
-      // ── Club Portals (Chitas, etc.) — lets an admin register any number of
-      // clubs, each with its own optional NFC operator card and its own set
-      // of default learning items. Every club added here immediately shows
-      // up as a searchable option in TeacherPortal's Club Scanner (ClubPicker)
-      // so staff can run independent sessions for each one.
-      function ClubCardsPanel({ learningItems }) {
-        const [clubs, setClubs] = useState([]);
-        const [configId, setConfigId] = useState(null);
-        const [newName, setNewName] = useState('');
-        const [newNfcId, setNewNfcId] = useState('');
-        const [newItems, setNewItems] = useState([]);
-        const [listening, setListening] = useState(false);
-        const [saving, setSaving] = useState(false);
-        const toast = useToast();
-        const ndefRef = useRef(null);
-
-        useEffect(() => {
-          supabase.from('mivtza_config').select('id,club_cards').limit(1).maybeSingle().then(({ data }) => {
-            if (data) {
-              setConfigId(data.id);
-              try { if (data.club_cards) setClubs(JSON.parse(data.club_cards)); } catch {}
-            }
-          });
-        }, []);
-
-        const persist = async (next) => {
-          setClubs(next);
-          setSaving(true);
-          const payload = { club_cards: JSON.stringify(next) };
-          const { error } = configId
-            ? await supabase.from('mivtza_config').update(payload).eq('id', configId)
-            : await supabase.from('mivtza_config').upsert(payload);
-          setSaving(false);
-          if (error) toast.error(`Save failed: ${error.message}`);
-          else toast.success('Clubs saved to cloud ✓');
-        };
-
-        const toggleNewItem = (dbKey) => {
-          setNewItems((items) => items.includes(dbKey) ? items.filter((k) => k !== dbKey) : [...items, dbKey]);
-        };
-
-        const addClub = () => {
-          const name = newName.trim();
-          if (!name) { toast.error('Give the club a name first.'); return; }
-          if (clubs.some((c) => (c.name || '').trim().toLowerCase() === name.toLowerCase())) {
-            toast.info('A club with that name already exists.');
-            return;
-          }
-          persist([...clubs, { name, nfc_id: newNfcId.trim(), items: newItems }]);
-          setNewName(''); setNewNfcId(''); setNewItems([]);
-        };
-
-        const removeClub = (name) => persist(clubs.filter((c) => c.name !== name));
-
-        const startScan = async () => {
-          if (!('NDEFReader' in window) || !window.isSecureContext) { toast.warning('Web NFC not available — type the ID manually.'); return; }
-          try {
-            const ndef = new NDEFReader();
-            ndefRef.current = ndef;
-            ndef.onreading = (e) => { setListening(false); if (e.serialNumber) setNewNfcId(e.serialNumber); };
-            await ndef.scan();
-            setListening(true);
-          } catch { setListening(false); }
-        };
-
-        return (
-          <div className="glass-panel rounded-lg p-5">
-            <ToastStack toasts={toast.toasts} remove={toast.remove} />
-            <h2 className="mb-1 flex items-center gap-2 text-xl font-extrabold"><Smartphone className="accent-text" /> Club Portals</h2>
-            <p className="muted-text mb-4 text-xs font-semibold">
-              Each club here becomes searchable in the Teacher Portal's Club Scanner — staff pick a club and run
-              its own session, independent of any other club's session that day.
-            </p>
-
-            <div className="grid gap-2 mb-4">
-              <input
-                className="glass-panel rounded px-3 py-2 text-sm font-semibold outline-none"
-                placeholder="Club name (e.g. Chitas Club)"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-              />
-              <div className="flex flex-wrap gap-2">
-                <label className="glass-panel flex min-w-0 flex-1 items-center gap-2 rounded px-3 py-2">
-                  <ScanLine size={16} className="muted-text shrink-0" />
-                  <input
-                    className="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none placeholder:font-medium font-mono"
-                    placeholder="Club card ID (optional)"
-                    value={newNfcId}
-                    onChange={(e) => setNewNfcId(e.target.value)}
-                  />
-                </label>
-                <button onClick={startScan} disabled={listening || saving}
-                  className="lux-card focus-ring inline-flex items-center gap-1 rounded px-3 py-2 text-sm font-extrabold disabled:opacity-70">
-                  {listening ? <RefreshCw size={14} className="animate-spin" /> : <Smartphone size={14} />}
-                  {listening ? 'Tap…' : 'Scan'}
-                </button>
-              </div>
-
-              {learningItems.length > 0 && (
-                <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-                  {learningItems.map((item) => (
-                    <button
-                      key={item.db_key}
-                      type="button"
-                      onClick={() => toggleNewItem(item.db_key)}
-                      className={classNames(
-                        'focus-ring rounded border px-2 py-1.5 text-left text-xs font-bold transition',
-                        newItems.includes(item.db_key) ? 'accent-bg line-border' : 'glass-panel'
-                      )}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              <button onClick={addClub} disabled={saving} className="app-button focus-ring rounded px-3 py-2 font-extrabold text-sm">
-                <Plus size={16} className="inline -mt-0.5" /> Add Club
-              </button>
-            </div>
-
-            <div className="grid gap-2">
-              {clubs.length === 0 && <p className="muted-text text-sm font-semibold">No clubs registered yet.</p>}
-              {clubs.map((c) => (
-                <div key={c.name} className="flex items-center justify-between rounded border line-border px-3 py-2">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-bold">{c.name}</p>
-                    <p className="muted-text truncate text-xs font-semibold">
-                      {c.nfc_id ? `Card: ${c.nfc_id}` : 'No card assigned'} · {(c.items || []).length} default item{(c.items || []).length === 1 ? '' : 's'}
-                    </p>
-                  </div>
-                  <button onClick={() => removeClub(c.name)} className="text-red-500 hover:scale-105 shrink-0"><Trash2 size={15} /></button>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      }
-
       // ── Bulk Import (bunks + classes from Google Sheets paste) ────────────
       // Names are matched word-order-independent so "Avi Adelist" (bunks sheet)
       // and "Adelist Avi" (classes sheet) both match the same camper.
@@ -2377,9 +2238,6 @@
                   <PasscodePanel />
                 </div>
               </section>
-
-              {/* ── Club Portals ── */}
-              <ClubCardsPanel learningItems={appConfig.learning_items || []} />
 
               {/* ── Bulk Import ── */}
               <BulkImportPanel campers={campers} onDone={load} />
@@ -3122,7 +2980,6 @@
         const [nfcListening, setNfcListening] = useState(false);
         const [submitted, setSubmitted] = useState(false);
         const [showClubScanner, setShowClubScanner] = useState(false);
-        const [clubScannerClub, setClubScannerClub] = useState(null); // null = picker step, object = active session
         const toast = useToast();
         const ndefRef = useRef(null);
         const nfcProcessingRef = useRef(false); // debounce multiple reads
@@ -3224,11 +3081,7 @@
           <Shell status="Platinum" onLogout={onLogout}>
             <ToastStack toasts={toast.toasts} remove={toast.remove} />
             {showClubScanner ? (
-              clubScannerClub ? (
-                <ClubSessionPortal club={clubScannerClub} onBack={() => setClubScannerClub(null)} />
-              ) : (
-                <ClubPicker onBack={() => setShowClubScanner(false)} onSelect={setClubScannerClub} />
-              )
+              <ChitasClubPortal onBack={() => setShowClubScanner(false)} />
             ) : (
             <div className="mx-auto max-w-2xl">
               <div className="mb-5 flex items-start justify-between gap-3">
@@ -3244,10 +3097,10 @@
                   )}
                 </div>
                 <button
-                  onClick={() => { setClubScannerClub(null); setShowClubScanner(true); }}
+                  onClick={() => setShowClubScanner(true)}
                   className="lux-card focus-ring shrink-0 inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-extrabold shadow-luxury"
                 >
-                  <Smartphone size={16} /> Club Scanner
+                  <Smartphone size={16} /> Chitas Club Scanner
                 </button>
               </div>
 
@@ -3374,82 +3227,7 @@
         );
       }
 
-      // ── Club Picker — manual search bar for choosing which club a staff
-      // member is about to run a session for. Reads the full roster of
-      // clubs an admin has configured (ClubCardsPanel, mivtza_config.
-      // club_cards) so any number of clubs — not just Chitas — are
-      // searchable and selectable here.
-      function ClubPicker({ onBack, onSelect }) {
-        const [clubs, setClubs] = useState([]);
-        const [loading, setLoading] = useState(true);
-        const [search, setSearch] = useState('');
-
-        useEffect(() => {
-          supabase.from('mivtza_config').select('club_cards').limit(1).maybeSingle().then(({ data }) => {
-            let list = [];
-            try { list = JSON.parse(data?.club_cards || '[]'); } catch {}
-            setClubs(list);
-            setLoading(false);
-          });
-        }, []);
-
-        const matches = search.trim()
-          ? clubs.filter((c) => (c.name || '').toLowerCase().includes(search.trim().toLowerCase()))
-          : clubs;
-
-        return (
-          <div className="mx-auto max-w-xl">
-            <div className="mb-5 flex items-start justify-between gap-3">
-              <div>
-                <p className="accent-text text-sm font-extrabold uppercase tracking-[0.2em]">Club Scanner</p>
-                <h1 className="mt-1 text-3xl font-extrabold">Choose a Club</h1>
-                <p className="muted-text mt-1 text-sm font-semibold">Search for the club running a session right now.</p>
-              </div>
-              <button onClick={onBack} className="glass-panel focus-ring shrink-0 rounded-lg px-3 py-2 text-sm font-bold">
-                <ChevronLeft size={16} className="inline -mt-0.5" /> Back
-              </button>
-            </div>
-
-            <div className="glass-panel rounded-xl p-5">
-              <label className="glass-panel flex items-center gap-2 rounded-lg px-4 py-3">
-                <ScanLine size={18} className="muted-text shrink-0" />
-                <input
-                  autoFocus
-                  className="min-w-0 flex-1 bg-transparent font-semibold outline-none"
-                  placeholder="Type a club name…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-                {search && <button onClick={() => setSearch('')}><X size={14} /></button>}
-              </label>
-
-              {loading && <p className="muted-text mt-3 text-sm font-semibold">Loading clubs…</p>}
-              {!loading && clubs.length === 0 && (
-                <p className="muted-text mt-3 text-sm font-semibold">No clubs registered yet — add one in Admin → Club Portals.</p>
-              )}
-              {!loading && clubs.length > 0 && matches.length === 0 && (
-                <p className="muted-text mt-3 text-sm font-semibold">No matching clubs.</p>
-              )}
-              {matches.length > 0 && (
-                <div className="mt-3 grid max-h-80 gap-2 overflow-y-auto">
-                  {matches.map((c) => (
-                    <button
-                      key={c.name}
-                      onClick={() => onSelect(c)}
-                      className="glass-panel focus-ring flex items-center justify-between rounded-lg px-4 py-3 text-left hover:scale-[1.01]"
-                    >
-                      <span className="font-bold">{c.name}</span>
-                      <ChevronRight size={16} className="muted-text" />
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      }
-
-      // ── Club Session Portal — session-queue staging workflow ─────────────
+      // ── Chitas Club Scanner — session-queue staging workflow ─────────────
       // Reached from inside TeacherPortal (already-authenticated teacher/
       // counselor session via teacher_profiles) rather than a separate NFC
       // operator card. Scanning never writes directly to daily_entries —
@@ -3464,17 +3242,11 @@
       // it's never used to gate future sessions. That same shape (an
       // append-only events row per scan/session) is what a future event
       // door-access scanner should reuse: one row per tap/session, no lock.
-      //
-      // Generalized to accept any `club` (from ClubPicker/ClubCardsPanel)
-      // rather than a single hardcoded club — each club runs its own
-      // independent session queue, and several clubs' sessions can be run
-      // back-to-back (or on different devices) the same day without
-      // interfering with one another.
-      function ClubSessionPortal({ club, onBack }) {
-        const CLUB_NAME = club.name;
+      function ChitasClubPortal({ onBack }) {
+        const CLUB_NAME = 'Chitas Club';
         const [checking, setChecking] = useState(true);
         // Every learning item, each carrying its own live `checked` flag for
-        // this session — defaults from this club's configured active set,
+        // this session — defaults from the previously-configured active set,
         // but the teacher can freely toggle any of them right on this screen
         // before/during scanning. This (not the global config) is what
         // actually gets submitted — see submitSession below.
@@ -3495,7 +3267,7 @@
           (async () => {
             setChecking(true);
             const [{ data: cfgRow }, { data: roster }] = await Promise.all([
-              supabase.from('mivtza_config').select('config_json').limit(1).maybeSingle(),
+              supabase.from('mivtza_config').select('config_json, club_cards').limit(1).maybeSingle(),
               supabase.from(CAMPER_READ_TABLE).select('id,name,nfc_id'),
             ]);
             setAllCampers(roster || []);
@@ -3503,10 +3275,14 @@
             let cfg = DEFAULT_CONFIG;
             if (cfgRow?.config_json) try { cfg = JSON.parse(cfgRow.config_json); } catch {}
 
-            // This specific club's configured default items (set in Admin →
-            // Club Portals) is the starting point for this session's
-            // checklist, not a fixed rule — still freely toggleable below.
-            const activeKeys = club.items || [];
+            // The previously-configured "active by default" set (from the old
+            // admin Club Portals panel) still lives in mivtza_config.club_cards
+            // even though that admin UI is gone — we just read it here as the
+            // starting point for this session's checklist, not as a fixed rule.
+            let clubs = [];
+            try { clubs = JSON.parse(cfgRow?.club_cards || '[]'); } catch {}
+            const match = clubs.find((c) => (c.name || '').trim().toLowerCase() === CLUB_NAME.toLowerCase());
+            const activeKeys = match?.items || [];
 
             setSessionItems(
               (cfg.learning_items || []).map((item) => ({ ...item, checked: activeKeys.includes(item.db_key) }))
@@ -3514,7 +3290,7 @@
 
             setChecking(false);
           })();
-        }, [club]);
+        }, []);
 
         const toggleSessionItem = (dbKey) => {
           setSessionItems((items) => items.map((i) => i.db_key === dbKey ? { ...i, checked: !i.checked } : i));
@@ -3642,7 +3418,7 @@
             <ToastStack toasts={toast.toasts} remove={toast.remove} />
             <div className="mb-5 flex items-start justify-between gap-3">
               <div>
-                <p className="accent-text text-sm font-extrabold uppercase tracking-[0.2em]">{CLUB_NAME}</p>
+                <p className="accent-text text-sm font-extrabold uppercase tracking-[0.2em]">Chitas Club</p>
                 <h1 className="mt-1 text-3xl font-extrabold">Event Attendance Scanner</h1>
                 <p className="muted-text mt-1 text-sm font-semibold">
                   Check off what this session actually covered before scanning. Run this as many times a day as you need.
