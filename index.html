@@ -290,6 +290,7 @@
         Smartphone,
         Sparkles,
         Trash2,
+        UserCheck,
         Users,
         WalletCards,
         X,
@@ -2929,6 +2930,11 @@
 
 
       // ── Teacher Portal ────────────────────────────────────────────────────
+      // Staff have unlimited back-marking here by design: unlike
+      // CamperDashboard, the date arrows/picker below are never clamped to
+      // `allowed_back_marking_days` (no min/max, no isBlocked/isLocked check
+      // at all) — that limit is intentionally camper-only. Only an
+      // authenticated teacher_profiles session ever reaches this component.
       function TeacherPortal({ onLogout, teacherName, bunk }) {
         const [appConfig, setAppConfig] = useState(DEFAULT_CONFIG);
         const [allCampers, setAllCampers] = useState([]);
@@ -3007,7 +3013,12 @@
           } catch { setNfcListening(false); }
         };
 
-        const submit = async () => {
+        // keepEditing=false ("Save & Next Student"): save then close the
+        // overlay and return to the search list, as before.
+        // keepEditing=true ("Save & Keep Editing"): save but leave the same
+        // camper's overlay open so staff can flip the date picker and log
+        // another day for the exact same kid without searching them up again.
+        const submit = async (keepEditing = false) => {
           if (!selected) return;
           const allConfigItems = [...(appConfig.learning_items||[]), ...(appConfig.hanhaga_items||[]), ...(appConfig.teacher_items||[])];
           const { error } = await saveDailyEntry({
@@ -3021,7 +3032,11 @@
           if (error) { toast.error(error.message); return; }
           setSubmitted(true);
           toast.success(`${selected.name} — saved ✓`);
-          setTimeout(() => { setSelected(null); setSearch(''); setSubmitted(false); }, 1500);
+          if (keepEditing) {
+            setTimeout(() => setSubmitted(false), 1000);
+          } else {
+            setTimeout(() => { setSelected(null); setSearch(''); setSubmitted(false); }, 1500);
+          }
         };
 
         const filteredCampers = search
@@ -3162,9 +3177,14 @@
                     <p className="glass-panel rounded-xl p-5 text-sm font-semibold muted-text">No learning or teacher items configured. Add them in Admin → App Configuration.</p>
                   )}
 
-                  <button onClick={submit} className="app-button focus-ring flex w-full items-center justify-center gap-2 rounded-xl px-5 py-5 text-lg font-extrabold">
-                    {submitted ? <><BadgeCheck size={22}/> Saved!</> : <><Save size={22}/> Save & Next Student</>}
-                  </button>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <button onClick={() => submit(false)} className="app-button focus-ring flex w-full items-center justify-center gap-2 rounded-xl px-5 py-5 text-lg font-extrabold">
+                      {submitted ? <><BadgeCheck size={22}/> Saved!</> : <><Save size={22}/> Save & Next Student</>}
+                    </button>
+                    <button onClick={() => submit(true)} className="lux-card focus-ring flex w-full items-center justify-center gap-2 rounded-xl px-5 py-5 text-lg font-extrabold shadow-luxury" title="Save this entry and keep this camper open so you can pick another date">
+                      {submitted ? <><BadgeCheck size={22}/> Saved!</> : <><PencilLine size={22}/> Save & Keep Editing</>}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -3180,10 +3200,17 @@
       // every tap just looks the camper up and stages them in a local
       // sessionQueue array. Nothing touches the database until the teacher
       // explicitly reviews the queue and hits "Review & Submit Session".
+      //
+      // By design this session can be run any number of times per day (see
+      // submitSession below) so staff can use it as a general quick-marking
+      // utility throughout the day, not just once. The `events` insert is an
+      // append-only audit log of each session run (staff, items, headcount) —
+      // it's never used to gate future sessions. That same shape (an
+      // append-only events row per scan/session) is what a future event
+      // door-access scanner should reuse: one row per tap/session, no lock.
       function ChitasClubPortal({ onBack }) {
         const CLUB_NAME = 'Chitas Club';
         const [checking, setChecking] = useState(true);
-        const [locked, setLocked] = useState(false);
         // Every learning item, each carrying its own live `checked` flag for
         // this session — defaults from the previously-configured active set,
         // but the teacher can freely toggle any of them right on this screen
@@ -3192,6 +3219,7 @@
         const [sessionItems, setSessionItems] = useState([]); // [{db_key,label,points,checked}]
         const [allCampers, setAllCampers] = useState([]);
         const [sessionQueue, setSessionQueue] = useState([]);
+        const [search, setSearch] = useState('');
         const [scanning, setScanning] = useState(false);
         const [submitting, setSubmitting] = useState(false);
         const toast = useToast();
@@ -3204,12 +3232,10 @@
         useEffect(() => {
           (async () => {
             setChecking(true);
-            const [{ data: eventRow }, { data: cfgRow }, { data: roster }] = await Promise.all([
-              supabase.from('events').select('id').eq('club_name', CLUB_NAME).eq('submission_date', today()).maybeSingle(),
+            const [{ data: cfgRow }, { data: roster }] = await Promise.all([
               supabase.from('mivtza_config').select('config_json, club_cards').limit(1).maybeSingle(),
               supabase.from(CAMPER_READ_TABLE).select('id,name,nfc_id'),
             ]);
-            setLocked(!!eventRow);
             setAllCampers(roster || []);
 
             let cfg = DEFAULT_CONFIG;
@@ -3251,8 +3277,19 @@
           setSessionQueue((q) => q.filter((c) => c.id !== camperId));
         };
 
+        // Manual-entry roster search — lets staff check a camper into the
+        // active session by typing their name, for whenever a physical NFC
+        // tap isn't practical (no card on hand, card not working, etc).
+        // Already-queued campers are filtered out of the results.
+        const searchMatches = search.trim()
+          ? allCampers
+              .filter((c) => c.name?.toLowerCase().includes(search.trim().toLowerCase()))
+              .filter((c) => !queueIdsRef.current.has(c.id))
+              .slice(0, 8)
+          : [];
+
         const startScan = async () => {
-          if (locked || scanning) return;
+          if (scanning) return;
           if (!('NDEFReader' in window) || !window.isSecureContext) {
             toast.warning('Web NFC not available on this device — use Android Chrome.');
             return;
@@ -3281,8 +3318,7 @@
         const stopScan = () => setScanning(false);
 
         const submitSession = async () => {
-          if (locked) return;
-          if (sessionQueue.length === 0) { toast.error('Queue is empty — scan at least one camper first.'); return; }
+          if (sessionQueue.length === 0) { toast.error('Queue is empty — scan or add at least one camper first.'); return; }
 
           // Read the LIVE checkbox states right now, not the config default —
           // this is what makes unchecking Tanya on this screen actually skip
@@ -3304,16 +3340,17 @@
             if (error) fail++; else ok++;
           }
 
-          // Proof-of-run row — this is what the lock-check at the top of this
-          // component queries for, so double submissions the same day are
-          // blocked automatically from here on. camper_count is explicitly
-          // coerced to a base-10 integer via parseInt — sessionQueue.length is
-          // already a real JS number, but this guards against Postgrest
-          // schema-cache mismatches some Supabase projects hit when a column
-          // was added after the API's schema was last cached (that specific
-          // error is fixed by running `NOTIFY pgrst, 'reload schema';` in the
-          // SQL editor, or waiting ~60s for it to auto-refresh — this
-          // conversion just ensures the value we send is always unambiguous).
+          // Append-only audit row for this session run — deliberately a plain
+          // insert (not an upsert keyed on the day) so the club can be run as
+          // many times as needed per day; nothing here ever locks it out.
+          // camper_count is explicitly coerced to a base-10 integer via
+          // parseInt — sessionQueue.length is already a real JS number, but
+          // this guards against Postgrest schema-cache mismatches some
+          // Supabase projects hit when a column was added after the API's
+          // schema was last cached (that specific error is fixed by running
+          // `NOTIFY pgrst, 'reload schema';` in the SQL editor, or waiting
+          // ~60s for it to auto-refresh — this conversion just ensures the
+          // value we send is always unambiguous).
           const campersCredited = parseInt(sessionQueue.length, 10) || 0;
           const { error: eventError } = await supabase.from('events').insert({
             // 'name' is a legacy column some events table setups still have
@@ -3334,10 +3371,9 @@
 
           setSubmitting(false);
           if (eventError) {
-            toast.error(`Credited ${ok} camper(s), but failed to lock today's submission: ${eventError.message}`);
+            toast.error(`Credited ${ok} camper(s), but failed to log this session: ${eventError.message}`);
           } else {
-            toast.success(`${ok} camper(s) credited${fail ? `, ${fail} failed` : ''} ✓ Session locked for today.`);
-            setLocked(true);
+            toast.success(`${ok} camper(s) credited${fail ? `, ${fail} failed` : ''} ✓`);
           }
           setSessionQueue([]);
           queueIdsRef.current.clear();
@@ -3351,7 +3387,7 @@
                 <p className="accent-text text-sm font-extrabold uppercase tracking-[0.2em]">Chitas Club</p>
                 <h1 className="mt-1 text-3xl font-extrabold">Event Attendance Scanner</h1>
                 <p className="muted-text mt-1 text-sm font-semibold">
-                  Check off what this session actually covered before scanning.
+                  Check off what this session actually covered before scanning. Run this as many times a day as you need.
                 </p>
               </div>
               <button onClick={onBack} className="glass-panel focus-ring shrink-0 rounded-lg px-3 py-2 text-sm font-bold">
@@ -3359,13 +3395,7 @@
               </button>
             </div>
 
-            {checking && <p className="muted-text text-sm font-semibold">Checking today's submission status…</p>}
-
-            {!checking && locked && (
-              <div className="mb-4 rounded-xl border border-red-400/40 bg-red-500/10 px-4 py-3 text-center text-sm font-bold text-red-500">
-                🔒 Chitas Club achievements for today have already been submitted by a teacher. Double submissions are locked.
-              </div>
-            )}
+            {checking && <p className="muted-text text-sm font-semibold">Loading roster…</p>}
 
             {!checking && (
               <div className="grid gap-4">
@@ -3383,9 +3413,8 @@
                         key={item.db_key}
                         type="button"
                         onClick={() => toggleSessionItem(item.db_key)}
-                        disabled={locked}
                         className={classNames(
-                          'focus-ring flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-40',
+                          'focus-ring flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm font-bold transition',
                           item.checked ? 'accent-bg line-border shadow-glow' : 'glass-panel'
                         )}
                       >
@@ -3400,15 +3429,46 @@
 
                 <button
                   onClick={scanning ? stopScan : startScan}
-                  disabled={locked}
                   className={classNames(
-                    'lux-card focus-ring flex w-full items-center justify-center gap-3 rounded-2xl px-5 py-6 text-xl font-extrabold shadow-luxury transition disabled:cursor-not-allowed disabled:opacity-40',
+                    'lux-card focus-ring flex w-full items-center justify-center gap-3 rounded-2xl px-5 py-6 text-xl font-extrabold shadow-luxury transition',
                     scanning && 'nfc-listening'
                   )}
                 >
                   {scanning ? <RefreshCw className="relative z-10 animate-spin" size={24} /> : <Smartphone className="relative z-10" size={24} />}
                   <span className="relative z-10">{scanning ? 'Scanning — tap cards to add' : 'Start Scan'}</span>
                 </button>
+
+                {/* Manual entry — search the roster by name and check a
+                    camper into the session without an NFC tap. */}
+                <div className="glass-panel rounded-xl p-5">
+                  <h2 className="mb-3 font-extrabold">Add a Camper Manually</h2>
+                  <label className="glass-panel flex items-center gap-2 rounded-lg px-4 py-3">
+                    <ScanLine size={18} className="muted-text shrink-0" />
+                    <input
+                      className="min-w-0 flex-1 bg-transparent font-semibold outline-none"
+                      placeholder="Type camper name…"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                    />
+                    {search && <button onClick={() => setSearch('')}><X size={14} /></button>}
+                  </label>
+                  {search && searchMatches.length === 0 && <p className="muted-text mt-2 text-sm font-semibold">No matching campers.</p>}
+                  {searchMatches.length > 0 && (
+                    <div className="mt-2 grid max-h-64 gap-2 overflow-y-auto">
+                      {searchMatches.map((c) => (
+                        <div key={c.id} className="glass-panel flex items-center justify-between gap-3 rounded-lg px-4 py-2.5">
+                          <span className="truncate font-bold">{c.name}</span>
+                          <button
+                            onClick={() => { addToQueue(c); setSearch(''); }}
+                            className="app-button focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-extrabold"
+                          >
+                            <UserCheck size={14} /> Check In
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
 
                 <div className="glass-panel rounded-xl p-5">
                   <div className="mb-3 flex items-center justify-between">
@@ -3430,7 +3490,7 @@
 
                 <button
                   onClick={submitSession}
-                  disabled={locked || submitting || sessionQueue.length === 0}
+                  disabled={submitting || sessionQueue.length === 0}
                   className="app-button focus-ring flex w-full items-center justify-center gap-2 rounded-xl px-5 py-4 text-lg font-extrabold disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   {submitting ? <RefreshCw size={20} className="animate-spin" /> : <BadgeCheck size={20} />}
