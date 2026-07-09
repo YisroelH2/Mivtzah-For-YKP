@@ -275,6 +275,7 @@
         Check,
         ChevronLeft,
         ChevronRight,
+        Copy,
         CreditCard,
         Gauge,
         KeyRound,
@@ -617,7 +618,7 @@
             </div>
             {children}
             <div className="mx-auto mt-8 max-w-7xl px-1 text-center">
-              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V43</p>
+              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V44.1.1</p>
               <p className="muted-text mt-1 text-xs font-semibold opacity-60">Copyright 2026 HINENI SYSTEMS</p>
             </div>
           </main>
@@ -1866,7 +1867,7 @@
       }
 
       function AdminDashboard() {
-        const [tab, setTab] = useState('dashboard'); // 'dashboard' | 'setup'
+        const [tab, setTab] = useState('dashboard'); // 'dashboard' | 'roster' | 'setup'
         const toast = useToast();
         const [campers, setCampers] = useState([]);
         const [appConfig, setAppConfig] = useState(DEFAULT_CONFIG);
@@ -1924,6 +1925,22 @@
             normalizeNfcId(c.nfc_id).includes(normalizeNfcId(rosterSearch)) ||
             c.bunk?.toLowerCase().includes(q) ||
             c.class?.toLowerCase().includes(q)
+          );
+        };
+
+        // Shared search predicate for the event-access columns — matches name,
+        // bunk/class (with or without a "Bunk " prefix), or an exact points value.
+        const accessMatches = (c) => {
+          if (!accessSearch) return true;
+          const q = accessSearch.trim().toLowerCase();
+          const qStripped = q.replace(/^bunk\s*/, '').trim();
+          const bunk = String(c.bunk || '').toLowerCase();
+          const cls = String(c.class || '').toLowerCase();
+          return (
+            c.name?.toLowerCase().includes(q) ||
+            bunk.includes(q) || bunk.includes(qStripped) ||
+            cls.includes(q) || cls.includes(qStripped) ||
+            (qStripped !== '' && !isNaN(Number(qStripped)) && Number(c.weekly_points) === Number(qStripped))
           );
         };
 
@@ -2059,13 +2076,55 @@
             <div className="mx-auto grid max-w-7xl gap-5 pb-24">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h1 className="text-3xl font-extrabold">{tab === 'dashboard' ? 'Camper Dashboard' : 'Setup & Configuration'}</h1>
-                  <p className="muted-text font-semibold">{tab === 'dashboard' ? 'Roster, event eligibility, and daily corrections.' : 'Cards, accounts, imports, and app-wide rules.'}</p>
+                  <h1 className="text-3xl font-extrabold">{tab === 'dashboard' ? 'Camper Dashboard' : tab === 'roster' ? 'Camper Roster' : 'Setup & Configuration'}</h1>
+                  <p className="muted-text font-semibold">{tab === 'dashboard' ? 'Event eligibility and daily corrections.' : tab === 'roster' ? 'Full roster, registration, and card assignment.' : 'Cards, accounts, imports, and app-wide rules.'}</p>
                 </div>
                 <IconButton icon={RefreshCw} label="Refresh data" onClick={load} className={loading ? 'animate-spin' : ''} />
               </div>
 
               {tab === 'dashboard' && (<>
+
+              {/* ── Global student search for the three access columns ── */}
+              <section className="glass-panel rounded-lg p-4">
+                <label className="flex items-center gap-3 rounded-lg px-2 py-1">
+                  <ScanLine size={18} className="accent-text shrink-0" />
+                  <input
+                    className="w-full bg-transparent text-base font-semibold outline-none placeholder:font-medium"
+                    placeholder="Search by name, bunk/class, or exact points…"
+                    value={accessSearch}
+                    onChange={(e) => setAccessSearch(e.target.value)}
+                  />
+                  {accessSearch && <button onClick={() => setAccessSearch('')} className="shrink-0"><X size={16} /></button>}
+                </label>
+              </section>
+
+              <section className="grid gap-4 lg:grid-cols-3">
+                <AccessList title="VIP Event Access" icon={Sparkles} campers={vip.filter(accessMatches)} onSelect={setHistoryCamper} />
+                <AccessList title="Standard Event Access" icon={BadgeCheck} campers={standard.filter(accessMatches)} onSelect={setHistoryCamper} />
+                <AccessList title="Not Eligible" icon={X} campers={notEligible.filter(accessMatches)} onSelect={setHistoryCamper} />
+              </section>
+
+              {historyCamper && (
+                <CamperHistoryModal
+                  camper={historyCamper}
+                  appConfig={appConfig}
+                  periodStart={periodStart}
+                  periodEnd={periodEnd}
+                  toast={toast}
+                  onClose={() => setHistoryCamper(null)}
+                  onAdjusted={(updatedCamper) => {
+                    // Instant feedback in the modal + roster, no page reload —
+                    // then quietly re-sync everything else from the source of truth.
+                    setHistoryCamper(updatedCamper);
+                    setCampers((prev) => prev.map((c) => c.id === updatedCamper.id ? { ...c, ...updatedCamper } : c));
+                    load();
+                  }}
+                />
+              )}
+
+              </>)}
+
+              {tab === 'roster' && (<>
 
               {/* ── Roster ── */}
               <section className="glass-panel overflow-hidden rounded-lg shadow-luxury">
@@ -2158,44 +2217,6 @@
                 </div>
               </section>
 
-              {/* ── Global student search for the three access columns ── */}
-              <section className="glass-panel rounded-lg p-4">
-                <label className="flex items-center gap-3 rounded-lg px-2 py-1">
-                  <ScanLine size={18} className="accent-text shrink-0" />
-                  <input
-                    className="w-full bg-transparent text-base font-semibold outline-none placeholder:font-medium"
-                    placeholder="Search students across VIP, Standard, and Not Eligible…"
-                    value={accessSearch}
-                    onChange={(e) => setAccessSearch(e.target.value)}
-                  />
-                  {accessSearch && <button onClick={() => setAccessSearch('')} className="shrink-0"><X size={16} /></button>}
-                </label>
-              </section>
-
-              <section className="grid gap-4 lg:grid-cols-3">
-                <AccessList title="VIP Event Access" icon={Sparkles} campers={vip.filter((c) => !accessSearch || c.name?.toLowerCase().includes(accessSearch.toLowerCase()))} onSelect={setHistoryCamper} />
-                <AccessList title="Standard Event Access" icon={BadgeCheck} campers={standard.filter((c) => !accessSearch || c.name?.toLowerCase().includes(accessSearch.toLowerCase()))} onSelect={setHistoryCamper} />
-                <AccessList title="Not Eligible" icon={X} campers={notEligible.filter((c) => !accessSearch || c.name?.toLowerCase().includes(accessSearch.toLowerCase()))} onSelect={setHistoryCamper} />
-              </section>
-
-              {historyCamper && (
-                <CamperHistoryModal
-                  camper={historyCamper}
-                  appConfig={appConfig}
-                  periodStart={periodStart}
-                  periodEnd={periodEnd}
-                  toast={toast}
-                  onClose={() => setHistoryCamper(null)}
-                  onAdjusted={(updatedCamper) => {
-                    // Instant feedback in the modal + roster, no page reload —
-                    // then quietly re-sync everything else from the source of truth.
-                    setHistoryCamper(updatedCamper);
-                    setCampers((prev) => prev.map((c) => c.id === updatedCamper.id ? { ...c, ...updatedCamper } : c));
-                    load();
-                  }}
-                />
-              )}
-
               {/* ── Register Camper ── */}
               <section className="glass-panel rounded-lg p-5">
                 <h2 className="mb-4 flex items-center gap-2 text-xl font-extrabold"><Plus className="accent-text" /> Register Camper</h2>
@@ -2255,13 +2276,20 @@
 
             {/* ── Bottom tab nav ── */}
             <div className="fixed bottom-0 inset-x-0 z-40 border-t line-border bg-[var(--bg-2)]/90 backdrop-blur-lg">
-              <div className="mx-auto flex max-w-md items-center justify-around px-4 py-2">
+              <div className="mx-auto flex max-w-lg items-center justify-around px-4 py-2">
                 <button
                   onClick={() => setTab('dashboard')}
                   className={classNames('focus-ring flex flex-1 flex-col items-center gap-1 rounded-xl py-2 transition', tab === 'dashboard' ? 'accent-text' : 'muted-text')}
                 >
-                  <Users size={22} strokeWidth={tab === 'dashboard' ? 2.5 : 2} />
+                  <Gauge size={22} strokeWidth={tab === 'dashboard' ? 2.5 : 2} />
                   <span className="text-xs font-extrabold">Dashboard</span>
+                </button>
+                <button
+                  onClick={() => setTab('roster')}
+                  className={classNames('focus-ring flex flex-1 flex-col items-center gap-1 rounded-xl py-2 transition', tab === 'roster' ? 'accent-text' : 'muted-text')}
+                >
+                  <Users size={22} strokeWidth={tab === 'roster' ? 2.5 : 2} />
+                  <span className="text-xs font-extrabold">Camper Roster</span>
                 </button>
                 <button
                   onClick={() => setTab('setup')}
@@ -2446,9 +2474,35 @@
       }
 
       function AccessList({ title, icon: Icon, campers, onSelect }) {
+        const [copied, setCopied] = useState(false);
+
+        const copyNames = async (e) => {
+          e.stopPropagation();
+          const text = campers.map((c) => c.name).filter(Boolean).join('\n');
+          try {
+            await navigator.clipboard.writeText(text);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          } catch (err) {
+            console.error('Copy failed', err);
+          }
+        };
+
         return (
           <div className="glass-panel rounded-lg p-5">
-            <h2 className="mb-4 flex items-center gap-2 text-lg font-extrabold"><Icon className="accent-text" /> {title}</h2>
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <h2 className="flex items-center gap-2 text-lg font-extrabold"><Icon className="accent-text" /> {title}</h2>
+              <span className="accent-bg rounded-full px-2.5 py-0.5 text-xs font-extrabold">{campers.length}</span>
+              <button
+                onClick={copyNames}
+                disabled={campers.length === 0}
+                className="focus-ring ml-auto inline-flex items-center gap-1.5 rounded border line-border px-2.5 py-1 text-xs font-extrabold transition hover:scale-105 disabled:opacity-40"
+                title="Copy names to clipboard"
+              >
+                {copied ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+            </div>
             <div className="grid gap-2">
               {campers.length === 0 && <p className="muted-text text-sm font-semibold">No campers in this group.</p>}
               {campers.map((camper) => (
