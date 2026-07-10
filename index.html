@@ -724,7 +724,7 @@
             </div>
             {children}
             <div className="mx-auto mt-8 max-w-7xl px-1 text-center">
-              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V5.0.1</p>
+              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V14.4.0</p>
               <p className="muted-text mt-1 text-xs font-semibold opacity-60">Copyright 2026 HINENI SYSTEMS</p>
             </div>
           </main>
@@ -3175,7 +3175,7 @@
       // into per-bunk groups the way counselors' rosters are split is just
       // clutter. Pass `singleGroupLabel` to bypass bunk grouping entirely and
       // render the whole camper list as one group under that label instead.
-      function BunkRosterBrowser({ campers, onSelect, singleGroupLabel }) {
+      function BunkRosterBrowser({ campers, onSelect, singleGroupLabel, todayMarksCount, totalDailyTasks }) {
         const [expanded, setExpanded] = useState({});
 
         const groups = useMemo(() => {
@@ -3212,16 +3212,29 @@
                   </button>
                   {isOpen && (
                     <div className="grid gap-1.5 border-t line-border p-3 sm:grid-cols-2">
-                      {list.map((c) => (
-                        <button
-                          key={c.id}
-                          type="button"
-                          onClick={() => onSelect(c)}
-                          className="focus-ring truncate rounded border line-border px-3 py-2 text-left text-sm font-bold transition hover:accent-bg"
-                        >
-                          {c.name}
-                        </button>
-                      ))}
+                      {list.map((c) => {
+                        const completed = todayMarksCount?.[c.id] || 0;
+                        return (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => onSelect(c)}
+                            className="focus-ring flex items-center justify-between gap-2 rounded border line-border px-3 py-2 text-left text-sm font-bold transition hover:accent-bg"
+                          >
+                            <span className="truncate">{c.name}</span>
+                            {totalDailyTasks > 0 && (
+                              <span className="flex shrink-0 gap-1">
+                                {Array.from({ length: totalDailyTasks }).map((_, i) => (
+                                  <span
+                                    key={i}
+                                    className={i < completed ? 'w-2 h-2 rounded-full bg-emerald-400' : 'w-2 h-2 rounded-full border border-gray-300'}
+                                  />
+                                ))}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -3817,6 +3830,7 @@
         const [nfcListening, setNfcListening] = useState(false);
         const [submitted, setSubmitted] = useState(false);
         const [showClubScanner, setShowClubScanner] = useState(false);
+        const [todayMarksCount, setTodayMarksCount] = useState({}); // camper_id -> # learning/teacher items marked today
         const toast = useToast();
         const ndefRef = useRef(null);
         const nfcProcessingRef = useRef(false); // debounce multiple reads
@@ -3850,6 +3864,24 @@
             setAllCampers(roster || []);
           });
         }, []);
+
+        // Drives the at-a-glance progress dots in the roster accordion: counts,
+        // per camper, how many of the items *this portal* is responsible for
+        // marking (learning_items + teacher_items — hanhagos are camper-marked,
+        // see itemMarkType) are already logged for today. Reloaded after every
+        // save so the dots update live as staff work through the roster.
+        const trackedDailyItems = [...(appConfig.learning_items || []), ...(appConfig.teacher_items || [])];
+        const loadTodayMarks = () => {
+          supabase.from('daily_entries').select('*').eq('entry_date', today()).then(({ data }) => {
+            const counts = {};
+            (data || []).forEach((row) => {
+              const flat = { ...row, ...(row.entry_data || {}), ...(row.teacher_data || {}) };
+              counts[row.camper_id] = trackedDailyItems.filter((item) => !!flat[item.db_key]).length;
+            });
+            setTodayMarksCount(counts);
+          });
+        };
+        useEffect(() => { loadTodayMarks(); }, [appConfig]);
 
         // Fetches whatever is already marked for this camper on the current
         // date and pre-fills the checkboxes, so the teacher sees the true,
@@ -3911,6 +3943,7 @@
           if (error) { toast.error(error.message); return; }
           setSubmitted(true);
           toast.success(`${selected.name} — saved ✓`);
+          if (date === today()) loadTodayMarks();
           if (keepEditing) {
             setTimeout(() => setSubmitted(false), 1000);
           } else {
@@ -3980,7 +4013,13 @@
                       <p className="muted-text mb-2 text-xs font-extrabold uppercase tracking-widest">
                         {isLearningTeacher ? 'Browse Your Class' : 'Browse by Bunk'}
                       </p>
-                      <BunkRosterBrowser campers={campers} onSelect={selectCamper} singleGroupLabel={singleGroupLabel} />
+                      <BunkRosterBrowser
+                        campers={campers}
+                        onSelect={selectCamper}
+                        singleGroupLabel={singleGroupLabel}
+                        todayMarksCount={todayMarksCount}
+                        totalDailyTasks={trackedDailyItems.length}
+                      />
                     </div>
                   )}
                 </div>
