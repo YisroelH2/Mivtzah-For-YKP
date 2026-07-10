@@ -469,6 +469,21 @@
         counselor: { border: 'border-sky-400/40',     bg: 'bg-sky-500/10',   text: 'text-sky-500',    dot: 'bg-sky-500',    label: '🧑‍🏫 Counselor/Teacher Marks' },
       };
 
+      // Fixed 5-slot legend for the roster accordion's progress dots (see
+      // BunkRosterBrowser). Slot position and color are constant regardless
+      // of which items a camp has configured, so staff can memorize "Blue =
+      // Chumash, Purple = Tanya, …" instead of re-reading a dynamic list.
+      // `match` is checked as a case-insensitive substring against each
+      // configured item's label, so camp-specific label wording (e.g. "Rambam
+      // (1 Perek)") still lands in the right slot.
+      const DAILY_PROGRESS_CATEGORIES = [
+        { label: 'Chumash',            color: 'bg-blue-500',   match: ['chumash'] },
+        { label: 'Tanya',              color: 'bg-purple-500', match: ['tanya'] },
+        { label: 'Rambam',             color: 'bg-amber-500',  match: ['rambam'] },
+        { label: 'Hayom Yom / Maamar', color: 'bg-rose-500',   match: ['hayom yom', 'maamar'] },
+        { label: 'Daily Essentials',   color: 'bg-emerald-500', match: ['mikvah', 'negel vasser'] },
+      ];
+
       // Known existing columns in daily_entries — anything outside this set
       // is stored in entry_data JSONB so the schema stays stable.
       const KNOWN_ENTRY_COLUMNS = new Set([
@@ -724,7 +739,7 @@
             </div>
             {children}
             <div className="mx-auto mt-8 max-w-7xl px-1 text-center">
-              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V14.4.0</p>
+              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V14.4.1</p>
               <p className="muted-text mt-1 text-xs font-semibold opacity-60">Copyright 2026 HINENI SYSTEMS</p>
             </div>
           </main>
@@ -3175,8 +3190,20 @@
       // into per-bunk groups the way counselors' rosters are split is just
       // clutter. Pass `singleGroupLabel` to bypass bunk grouping entirely and
       // render the whole camper list as one group under that label instead.
-      function BunkRosterBrowser({ campers, onSelect, singleGroupLabel, todayMarksCount, totalDailyTasks }) {
+      function BunkRosterBrowser({ campers, onSelect, singleGroupLabel, appConfig, todayEntryByCamper }) {
         const [expanded, setExpanded] = useState({});
+
+        // Resolves each fixed category slot to the configured item db_key(s)
+        // whose label matches it, so a camp's actual config (which may rename
+        // labels or drop items) still lights up the right dot.
+        const categoryDbKeys = useMemo(() => {
+          const allItems = [...(appConfig.learning_items || []), ...(appConfig.hanhaga_items || []), ...(appConfig.teacher_items || [])];
+          return DAILY_PROGRESS_CATEGORIES.map((cat) =>
+            allItems
+              .filter((item) => cat.match.some((m) => (item.label || '').toLowerCase().includes(m)))
+              .map((item) => item.db_key)
+          );
+        }, [appConfig]);
 
         const groups = useMemo(() => {
           if (singleGroupLabel) {
@@ -3213,7 +3240,7 @@
                   {isOpen && (
                     <div className="grid gap-1.5 border-t line-border p-3 sm:grid-cols-2">
                       {list.map((c) => {
-                        const completed = todayMarksCount?.[c.id] || 0;
+                        const flatEntry = todayEntryByCamper?.[c.id];
                         return (
                           <button
                             key={c.id}
@@ -3222,16 +3249,18 @@
                             className="focus-ring flex items-center justify-between gap-2 rounded border line-border px-3 py-2 text-left text-sm font-bold transition hover:accent-bg"
                           >
                             <span className="truncate">{c.name}</span>
-                            {totalDailyTasks > 0 && (
-                              <span className="flex shrink-0 gap-1">
-                                {Array.from({ length: totalDailyTasks }).map((_, i) => (
+                            <span className="flex shrink-0 gap-1">
+                              {DAILY_PROGRESS_CATEGORIES.map((cat, i) => {
+                                const done = !!flatEntry && categoryDbKeys[i].some((key) => flatEntry[key]);
+                                return (
                                   <span
-                                    key={i}
-                                    className={i < completed ? 'w-2 h-2 rounded-full bg-emerald-400' : 'w-2 h-2 rounded-full border border-gray-300'}
+                                    key={cat.label}
+                                    title={cat.label}
+                                    className={done ? `w-2 h-2 rounded-full ${cat.color}` : 'w-2 h-2 rounded-full border border-gray-300 bg-transparent'}
                                   />
-                                ))}
-                              </span>
-                            )}
+                                );
+                              })}
+                            </span>
                           </button>
                         );
                       })}
@@ -3830,7 +3859,7 @@
         const [nfcListening, setNfcListening] = useState(false);
         const [submitted, setSubmitted] = useState(false);
         const [showClubScanner, setShowClubScanner] = useState(false);
-        const [todayMarksCount, setTodayMarksCount] = useState({}); // camper_id -> # learning/teacher items marked today
+        const [todayEntryByCamper, setTodayEntryByCamper] = useState({}); // camper_id -> flattened {db_key: bool} for today
         const toast = useToast();
         const ndefRef = useRef(null);
         const nfcProcessingRef = useRef(false); // debounce multiple reads
@@ -3865,20 +3894,20 @@
           });
         }, []);
 
-        // Drives the at-a-glance progress dots in the roster accordion: counts,
-        // per camper, how many of the items *this portal* is responsible for
-        // marking (learning_items + teacher_items — hanhagos are camper-marked,
-        // see itemMarkType) are already logged for today. Reloaded after every
-        // save so the dots update live as staff work through the roster.
-        const trackedDailyItems = [...(appConfig.learning_items || []), ...(appConfig.teacher_items || [])];
+        // Drives the at-a-glance progress dots in the roster accordion: fetches
+        // every camper's full today's row (learning/teacher columns + JSONB
+        // fields, plus hanhaga columns so "Daily Essentials" can light up too)
+        // and flattens each into a single {db_key: bool} map. BunkRosterBrowser
+        // then checks specific db_keys per fixed color slot (see
+        // DAILY_PROGRESS_CATEGORIES). Reloaded after every save so the dots
+        // update live as staff work through the roster.
         const loadTodayMarks = () => {
           supabase.from('daily_entries').select('*').eq('entry_date', today()).then(({ data }) => {
-            const counts = {};
+            const byCamper = {};
             (data || []).forEach((row) => {
-              const flat = { ...row, ...(row.entry_data || {}), ...(row.teacher_data || {}) };
-              counts[row.camper_id] = trackedDailyItems.filter((item) => !!flat[item.db_key]).length;
+              byCamper[row.camper_id] = { ...row, ...(row.entry_data || {}), ...(row.teacher_data || {}) };
             });
-            setTodayMarksCount(counts);
+            setTodayEntryByCamper(byCamper);
           });
         };
         useEffect(() => { loadTodayMarks(); }, [appConfig]);
@@ -4017,8 +4046,8 @@
                         campers={campers}
                         onSelect={selectCamper}
                         singleGroupLabel={singleGroupLabel}
-                        todayMarksCount={todayMarksCount}
-                        totalDailyTasks={trackedDailyItems.length}
+                        appConfig={appConfig}
+                        todayEntryByCamper={todayEntryByCamper}
                       />
                     </div>
                   )}
