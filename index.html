@@ -3,10 +3,21 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // Dual Manifest: Admin Portal and Teacher/Counselor Portal install as
+      // two separate PWAs. Injected (rather than a static <link>) so the
+      // choice can be made from the URL before the browser reads the manifest.
+      (function () {
+        var manifestHref = window.location.search.includes('admin=1') ? './admin-manifest.json' : './manifest.json';
+        var link = document.createElement('link');
+        link.rel = 'manifest';
+        link.href = manifestHref;
+        document.head.appendChild(link);
+      })();
+    </script>
     <title>Mivtza Amek</title>
     <link rel="icon" type="image/png" href="./icon-192.png" />
     <link rel="apple-touch-icon" href="./icon-192.png" />
-    <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#c89c3b" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
