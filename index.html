@@ -1981,6 +1981,10 @@
       // eligible via points, and a Gold-tier camper can be VIP-eligible too.
       const SCANNER_CACHE_KEY = 'mivtza_scanner_cache';
       const SCANNER_RESULT_MS = 3000;
+      // Matches the portal's darkest background (bg-black / bg-slate-950) so
+      // the mobile status bar / notch area blends into the overlay instead
+      // of showing the app's default gold theme-color through it.
+      const SCANNER_THEME_COLOR = '#000000';
 
       const SCANNER_SCREENS = {
         standard: {
@@ -2058,6 +2062,19 @@
           }
         }, []);
 
+        // Force the mobile status bar / notch to match the portal's dark
+        // background instead of the app's gold theme-color bleeding through
+        // — and restore whatever it was set to the moment the portal closes,
+        // regardless of how it closes (Exit button, onExit, or unmount).
+        useEffect(() => {
+          const meta = document.querySelector('meta[name="theme-color"]');
+          const previous = meta ? meta.getAttribute('content') : null;
+          if (meta) meta.setAttribute('content', SCANNER_THEME_COLOR);
+          return () => {
+            if (meta && previous !== null) meta.setAttribute('content', previous);
+          };
+        }, []);
+
         const handleScan = (rawId) => {
           if (!cache || busyRef.current) return;
           const target = normalizeNfcId(rawId);
@@ -2132,7 +2149,7 @@
         return (
           <div
             className={classNames(
-              'fixed inset-0 z-[100] flex flex-col items-center overflow-hidden px-6 text-center transition-colors duration-300',
+              'fixed inset-0 z-[9999] h-[100dvh] w-full flex flex-col items-center overflow-hidden border-0 px-6 text-center transition-colors duration-300',
               isAdmin ? 'justify-between py-10 sm:py-14' : 'justify-center',
               active ? active.bg : 'bg-slate-950',
               active ? active.textClass : 'text-white',
