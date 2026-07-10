@@ -3284,6 +3284,7 @@
         const [editingItem, setEditingItem] = useState(null); // { date, db_key } | null
         const [editValue, setEditValue] = useState('');
         const [backfillOpenDate, setBackfillOpenDate] = useState(null); // date string | null
+        const [extraDaysBack, setExtraDaysBack] = useState(0); // days pushed before periodStart via "Load More"
 
         const reloadEntries = () => {
           setLoading(true);
@@ -3329,9 +3330,20 @@
         const entryByDate = {};
         entries.forEach((row) => { entryByDate[row.entry_date] = row; });
 
-        const rangeStart = periodStart || shiftDate(today(), -13);
-        const rangeEnd = periodEnd || today();
+        // Default view is capped to "today" — never render future date blocks,
+        // even when the competition's periodEnd hasn't arrived yet. Past history
+        // before periodStart is hidden by default and pulled in via "Load More".
+        const basePeriodStart = periodStart || shiftDate(today(), -13);
+        const basePeriodEnd = periodEnd || today();
+        const rangeStart = shiftDate(basePeriodStart, -extraDaysBack);
+        const rangeEnd = basePeriodEnd < today() ? basePeriodEnd : today();
         const allDates = enumerateDateRange(rangeStart, rangeEnd).reverse();
+
+        // Entries are fetched unfiltered by date (see reloadEntries above), so
+        // the earliest entry_date we already have tells us whether there's any
+        // real history left before the current rangeStart worth loading.
+        const earliestEntryDate = entries.reduce((min, e) => (!min || e.entry_date < min ? e.entry_date : min), null);
+        const canLoadMoreHistory = !!earliestEntryDate && rangeStart > earliestEntryDate;
 
         const checkedItemsFor = (row) => {
           if (!row) return [];
@@ -3598,6 +3610,18 @@
                     );
                   })}
                 </div>
+
+                {/* Load More Past History — extends rangeStart further back;
+                    hidden once we've reached the oldest entry_date we have on
+                    file for this camper, since anything further back is guaranteed empty. */}
+                {!loading && canLoadMoreHistory && (
+                  <button
+                    onClick={() => setExtraDaysBack((d) => d + 14)}
+                    className="focus-ring mt-4 w-full rounded-lg border border-dashed line-border px-4 py-2.5 text-xs font-extrabold uppercase tracking-widest muted-text transition hover:accent-text hover:border-solid"
+                  >
+                    Load More Past History
+                  </button>
+                )}
               </div>
 
               {/* Close footer */}
