@@ -3193,7 +3193,7 @@
       // into per-bunk groups the way counselors' rosters are split is just
       // clutter. Pass `singleGroupLabel` to bypass bunk grouping entirely and
       // render the whole camper list as one group under that label instead.
-      function BunkRosterBrowser({ campers, onSelect, singleGroupLabel, appConfig, todayEntryByCamper }) {
+      function BunkRosterBrowser({ campers, onSelect, singleGroupLabel, appConfig = DEFAULT_CONFIG, todayEntryByCamper = {} }) {
         const [expanded, setExpanded] = useState({});
 
         // Resolves each fixed category slot to the configured item db_key(s)
