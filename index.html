@@ -3140,17 +3140,25 @@
       // instead of typing a search query. Groups the given camper list by
       // bunk (falling back to class, then "Unassigned"), each collapsed by
       // default with its own show/hide toggle.
-      function BunkRosterBrowser({ campers, onSelect }) {
+      //
+      // Learning teachers' students span multiple bunks, so splitting them
+      // into per-bunk groups the way counselors' rosters are split is just
+      // clutter. Pass `singleGroupLabel` to bypass bunk grouping entirely and
+      // render the whole camper list as one group under that label instead.
+      function BunkRosterBrowser({ campers, onSelect, singleGroupLabel }) {
         const [expanded, setExpanded] = useState({});
 
         const groups = useMemo(() => {
+          if (singleGroupLabel) {
+            return campers.length ? [[singleGroupLabel, campers]] : [];
+          }
           const map = {};
           campers.forEach((c) => {
             const key = c.bunk || c.class || 'Unassigned';
             (map[key] = map[key] || []).push(c);
           });
           return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0]));
-        }, [campers]);
+        }, [campers, singleGroupLabel]);
 
         if (groups.length === 0) return <p className="muted-text text-sm font-semibold">No campers to show.</p>;
 
@@ -3771,6 +3779,14 @@
           ? allCampers.filter((c) => exactMatch(c.bunk, bunk) || exactMatch(c.class, bunk))
           : allCampers;
 
+        // Same signal used above to pick which camper column to match against
+        // doubles as the role check: if nobody's `bunk` column matches this
+        // profile's `bunk` value, it must have matched via `class` instead,
+        // which only happens for a learning teacher. Counselors' rosters stay
+        // grouped by bunk; a teacher's whole roster collapses into one group.
+        const isLearningTeacher = !!bunk && !allCampers.some((c) => exactMatch(c.bunk, bunk));
+        const singleGroupLabel = isLearningTeacher ? `${bunk}'s Class` : null;
+
         useEffect(() => {
           Promise.all([
             supabase.from('mivtza_config').select('config_json').limit(1).maybeSingle(),
@@ -3907,8 +3923,10 @@
                     </>
                   ) : (
                     <div className="max-h-80 overflow-y-auto">
-                      <p className="muted-text mb-2 text-xs font-extrabold uppercase tracking-widest">Browse by Bunk</p>
-                      <BunkRosterBrowser campers={campers} onSelect={selectCamper} />
+                      <p className="muted-text mb-2 text-xs font-extrabold uppercase tracking-widest">
+                        {isLearningTeacher ? 'Browse Your Class' : 'Browse by Bunk'}
+                      </p>
+                      <BunkRosterBrowser campers={campers} onSelect={selectCamper} singleGroupLabel={singleGroupLabel} />
                     </div>
                   )}
                 </div>
