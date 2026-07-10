@@ -273,11 +273,6 @@
         0%   { opacity: 0; transform: scale(.82); }
         100% { opacity: 1; transform: scale(1); }
       }
-      @keyframes scanner-vip-gradient {
-        0%   { background-position: 0% 50%; }
-        50%  { background-position: 100% 50%; }
-        100% { background-position: 0% 50%; }
-      }
       @keyframes scanner-decline-shake {
         0%, 100% { transform: translateX(0); }
         20%      { transform: translateX(-14px); }
@@ -285,13 +280,38 @@
         60%      { transform: translateX(-8px); }
         80%      { transform: translateX(6px); }
       }
+      /* Gold VIP — shimmering metallic shine sweeping across the gradient. */
+      @keyframes scanner-gold-shine {
+        0%   { background-position: 0% 50%; }
+        50%  { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+      }
+      /* Platinum VIP — bright white inner border glow breathing in/out. */
+      @keyframes scanner-platinum-glow {
+        0%, 100% { box-shadow: inset 0 0 50px rgba(255,255,255,.55), inset 0 0 110px rgba(148,163,184,.25); }
+        50%      { box-shadow: inset 0 0 90px rgba(255,255,255,.95), inset 0 0 160px rgba(148,163,184,.4); }
+      }
+      /* Black VIP — heavy, intense slow pulse across the obsidian field. */
+      @keyframes scanner-black-pulse {
+        0%, 100% { box-shadow: inset 0 0 40px rgba(251,191,36,0); filter: brightness(1); }
+        50%      { box-shadow: inset 0 0 130px rgba(251,191,36,.3); filter: brightness(1.18); }
+      }
+      /* Admin override — cool neon-blue field pulse. */
+      @keyframes scanner-admin-pulse {
+        0%, 100% { box-shadow: inset 0 0 50px rgba(56,189,248,.12); }
+        50%      { box-shadow: inset 0 0 110px rgba(56,189,248,.32); }
+      }
       .scanner-ring { animation: scanner-ring 2s ease-out infinite; }
       .scanner-pop { animation: scanner-pop .35s cubic-bezier(.2,1.4,.4,1) both; }
-      .scanner-vip-bg {
-        background-size: 220% 220%;
-        animation: scanner-vip-gradient 4s ease infinite;
-      }
       .scanner-decline-shake { animation: scanner-decline-shake .5s ease-in-out; }
+      .scanner-gold-bg {
+        background-size: 220% 220%;
+        animation: scanner-gold-shine 2.6s ease-in-out infinite;
+      }
+      .scanner-platinum-bg { animation: scanner-platinum-glow 2.2s ease-in-out infinite; }
+      .scanner-black-bg { animation: scanner-black-pulse 2.6s ease-in-out infinite; }
+      .scanner-admin-bg { animation: scanner-admin-pulse 2.4s ease-in-out infinite; }
+      .scanner-text-glow { text-shadow: 0 0 14px rgba(251,191,36,.9), 0 0 32px rgba(251,191,36,.5); }
     </style>
   </head>
   <body>
@@ -302,6 +322,7 @@
       import { createRoot } from 'https://esm.sh/react-dom@18.3.1/client';
       import {
         Award,
+        Badge,
         BadgeCheck,
         BarChart3,
         CalendarDays,
@@ -313,6 +334,7 @@
         Copy,
         CreditCard,
         Crown,
+        Diamond,
         Gauge,
         KeyRound,
         Lock,
@@ -1937,33 +1959,75 @@
       // calls here, so the portal keeps working with no connectivity at the
       // event door. Card lookups are resolved in this priority order: admin
       // cards first (always an override, regardless of event eligibility),
-      // then camper cards — where card_status ("Gold"/"Platinum"/"Black")
-      // picks Standard vs. VIP styling and weekly-points eligibility gates
-      // approval vs. decline.
+      // then camper cards.
+      //
+      // Two independent axes drive a camper card's result:
+      //   - access ("standard" | "vip" | "denied") — this event's door
+      //     eligibility, derived from weekly_points vs. the standard/VIP
+      //     thresholds in Setup.
+      //   - pointStatus ("Gold" | "Platinum" | "Black") — the camper's
+      //     overall card tier (card_status), shown as a badge and, for VIP
+      //     scans, driving which of the three premium looks renders.
+      // These are unrelated: a Black-tier camper can still only be VIP-
+      // eligible via points, and a Gold-tier camper can be VIP-eligible too.
       const SCANNER_CACHE_KEY = 'mivtza_scanner_cache';
       const SCANNER_RESULT_MS = 3000;
 
       const SCANNER_SCREENS = {
         standard: {
-          bg: 'bg-gradient-to-br from-emerald-600 via-emerald-500 to-emerald-600',
+          bg: 'bg-gradient-to-br from-emerald-500 via-emerald-400 to-emerald-600',
           icon: Check,
-          headline: 'ACCESS GRANTED',
-        },
-        vip: {
-          bg: 'scanner-vip-bg bg-gradient-to-br from-amber-600 via-yellow-300 to-amber-500 text-amber-950',
-          icon: Crown,
-          headline: 'VIP ACCESS GRANTED',
+          iconClass: 'text-white drop-shadow-[0_0_22px_rgba(255,255,255,.65)]',
+          textClass: 'text-white',
+          subTextClass: 'text-white/80',
         },
         admin: {
-          bg: 'bg-slate-950',
+          bg: 'scanner-admin-bg bg-gradient-to-br from-slate-950 via-black to-slate-900',
           icon: ShieldCheck,
-          headline: 'SYSTEM OVERRIDE',
+          iconClass: 'text-sky-300 drop-shadow-[0_0_30px_rgba(56,189,248,.85)]',
+          textClass: 'text-sky-50',
+          subTextClass: 'text-sky-300/80',
         },
         declined: {
-          bg: 'bg-gradient-to-br from-red-700 via-red-600 to-red-700',
+          bg: 'bg-gradient-to-br from-red-700 via-red-600 to-red-800',
           icon: X,
-          headline: 'ACCESS DENIED',
+          iconClass: 'text-white drop-shadow-[0_0_26px_rgba(255,255,255,.75)]',
+          textClass: 'text-white',
+          subTextClass: 'text-white/80',
         },
+      };
+
+      // VIP looks are picked dynamically by the camper's point status —
+      // Gold/Platinum/Black each get a distinct premium treatment.
+      const VIP_SCREENS = {
+        Gold: {
+          bg: 'scanner-gold-bg bg-gradient-to-br from-yellow-400 via-yellow-200 to-yellow-600',
+          icon: Crown,
+          iconClass: 'text-amber-900 drop-shadow-[0_0_28px_rgba(250,204,21,.95)]',
+          textClass: 'text-slate-900',
+          subTextClass: 'text-slate-800/80',
+        },
+        Platinum: {
+          bg: 'scanner-platinum-bg bg-gradient-to-br from-slate-300 via-gray-100 to-slate-400',
+          icon: Diamond,
+          iconClass: 'text-slate-700 drop-shadow-[0_0_26px_rgba(255,255,255,.95)]',
+          textClass: 'text-slate-900',
+          subTextClass: 'text-slate-700/80',
+        },
+        Black: {
+          bg: 'scanner-black-bg bg-gradient-to-br from-gray-900 via-black to-gray-800',
+          icon: Badge,
+          iconClass: 'text-amber-400 drop-shadow-[0_0_30px_rgba(251,191,36,.95)]',
+          textClass: 'text-white scanner-text-glow',
+          subTextClass: 'text-amber-200/80',
+        },
+      };
+
+      const ACCESS_HEADLINES = {
+        standard: 'STANDARD ACCESS GRANTED',
+        vip: 'VIP ACCESS GRANTED',
+        admin: 'SYSTEM OVERRIDE / ACCESS GRANTED',
+        declined: 'ACCESS DENIED',
       };
 
       function EventScannerPortal({ onExit }) {
@@ -1997,13 +2061,11 @@
 
           let next;
           if (adminMatch) {
-            next = { type: 'admin', name: adminMatch.name, tier: 'Admin' };
-          } else if (!camperMatch || !camperMatch.eligible) {
-            next = { type: 'declined', name: camperMatch?.name || '', tier: camperMatch?.tier || '' };
-          } else if (camperMatch.tier === 'Gold') {
-            next = { type: 'standard', name: camperMatch.name, tier: camperMatch.tier };
+            next = { type: 'admin', name: adminMatch.name };
+          } else if (!camperMatch || camperMatch.access === 'denied') {
+            next = { type: 'declined', name: camperMatch?.name || '', pointStatus: camperMatch?.pointStatus || '' };
           } else {
-            next = { type: 'vip', name: camperMatch.name, tier: camperMatch.tier };
+            next = { type: camperMatch.access, name: camperMatch.name, pointStatus: camperMatch.pointStatus };
           }
 
           setResult(next);
@@ -2053,13 +2115,16 @@
 
         useEffect(() => () => clearTimeout(resetTimerRef.current), []);
 
-        const active = result ? SCANNER_SCREENS[result.type] : null;
+        const active = result
+          ? (result.type === 'vip' ? (VIP_SCREENS[result.pointStatus] || VIP_SCREENS.Gold) : SCANNER_SCREENS[result.type])
+          : null;
 
         return (
           <div
             className={classNames(
-              'fixed inset-0 z-[100] flex flex-col items-center justify-center overflow-hidden px-6 text-center text-white transition-colors duration-300',
+              'fixed inset-0 z-[100] flex flex-col items-center justify-center overflow-hidden px-6 text-center transition-colors duration-300',
               active ? active.bg : 'bg-slate-950',
+              active ? active.textClass : 'text-white',
               result?.type === 'declined' && 'scanner-decline-shake'
             )}
           >
@@ -2069,6 +2134,10 @@
                 <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-sky-400/70 to-transparent" />
                 <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-sky-400/70 to-transparent" />
               </div>
+            )}
+
+            {result?.type === 'vip' && result.pointStatus === 'Platinum' && (
+              <div className="pointer-events-none absolute inset-4 rounded-[2rem] border-2 border-white/70 shadow-[0_0_40px_rgba(255,255,255,.5)]" />
             )}
 
             <button
@@ -2117,15 +2186,19 @@
             )}
 
             {result && active && (
-              <div className="scanner-pop flex flex-col items-center gap-5">
-                <active.icon size={88} className="drop-shadow-[0_0_24px_rgba(255,255,255,.55)]" strokeWidth={1.75} />
+              <div className="scanner-pop relative flex flex-col items-center gap-5">
+                <active.icon size={88} className={active.iconClass} strokeWidth={1.75} />
                 {result.type !== 'declined' && (
                   <div>
-                    <h1 className="text-4xl font-extrabold tracking-tight sm:text-5xl">{result.name || 'Unknown'}</h1>
-                    <p className="mt-2 text-lg font-bold uppercase tracking-[0.2em] opacity-80">Status: {result.tier}</p>
+                    <h1 className={classNames('text-4xl font-extrabold tracking-tight sm:text-5xl', active.textClass)}>{result.name || 'Unknown'}</h1>
+                    <p className={classNames('mt-2 text-lg font-bold uppercase tracking-[0.2em]', active.subTextClass)}>
+                      Status: {result.type === 'admin' ? 'Admin' : result.pointStatus}
+                    </p>
                   </div>
                 )}
-                <p className="text-2xl font-black uppercase tracking-[0.15em] sm:text-3xl">{active.headline}</p>
+                <p className={classNames('text-2xl font-black uppercase tracking-[0.15em] sm:text-3xl', active.textClass)}>
+                  {ACCESS_HEADLINES[result.type]}
+                </p>
               </div>
             )}
           </div>
@@ -2378,28 +2451,35 @@
         };
 
         // ── Launch Event Scanner ─────────────────────────────────────────────
-        // Snapshots the current roster into localStorage — name, event
-        // eligibility (weekly points vs. the standard threshold), and card
-        // tier (Gold/Platinum/Black from card_status) — plus the admin_cards
-        // list, so EventScannerPortal can resolve every scan with zero
-        // network calls once launched.
+        // Snapshots the current roster into localStorage — name, this
+        // event's door access level (standard/vip/denied, derived from
+        // weekly points vs. the standard/VIP thresholds), and the camper's
+        // overall point status (Gold/Platinum/Black from card_status,
+        // unrelated to event access) — plus the admin_cards list, so
+        // EventScannerPortal can resolve every scan with zero network calls
+        // once launched.
         const launchEventScanner = () => {
           const standardThreshold = Number(appConfig.standard_event_threshold ?? 400);
+          const vipThreshold = Number(appConfig.vip_event_threshold ?? 700);
           let adminIds = [];
           try { adminIds = JSON.parse(configAdminCards || '[]'); } catch {}
 
           const camperRecords = campers
             .filter((c) => c.nfc_id)
-            .map((c) => ({
-              nfc_id: normalizeNfcId(c.nfc_id),
-              name: c.name,
-              tier: normalizeStatus(c.card_status),
-              eligible: Number(c.weekly_points) >= standardThreshold,
-            }));
+            .map((c) => {
+              const pts = Number(c.weekly_points) || 0;
+              const access = pts >= vipThreshold ? 'vip' : pts >= standardThreshold ? 'standard' : 'denied';
+              return {
+                nfc_id: normalizeNfcId(c.nfc_id),
+                name: c.name,
+                pointStatus: normalizeStatus(c.card_status),
+                access,
+              };
+            });
 
           const adminRecords = adminIds
             .filter(Boolean)
-            .map((id) => ({ nfc_id: normalizeNfcId(id), name: 'Administrator', tier: 'Admin', eligible: true }));
+            .map((id) => ({ nfc_id: normalizeNfcId(id), name: 'Administrator' }));
 
           localStorage.setItem(SCANNER_CACHE_KEY, JSON.stringify({
             campers: camperRecords,
