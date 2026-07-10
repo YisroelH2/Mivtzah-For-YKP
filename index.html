@@ -1221,6 +1221,12 @@
         // marking themselves" apart from "staff, incidentally viewed via
         // the camper card" so only the former is held to allowedBackDays.
         const [isStaffSession, setIsStaffSession] = useState(false);
+        // Same idea as isStaffSession but for admin_profiles: an admin
+        // signed in via AdminGate's email/password flow (a real Supabase
+        // Auth session) who taps a camper's NFC card should get the same
+        // unlimited-backmarking treatment as staff, not be held to the
+        // camper allowedBackDays limit.
+        const [isAdminSession, setIsAdminSession] = useState(false);
         const toast = useToast();
         const status = normalizeStatus(camper.card_status);
 
@@ -1259,6 +1265,8 @@
         // `camper` got here (an NFC card match) so it catches staff who
         // are signed in as staff in this browser but are viewing their own
         // camper card, not just staff routed in through TeacherPortal.
+        // Same check, but against admin_profiles — lets an admin who taps a
+        // camper's NFC card while signed in bypass allowedBackDays too.
         useEffect(() => {
           let cancelled = false;
           supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -1269,6 +1277,13 @@
               .ilike('email', session.user.email)
               .maybeSingle();
             if (!cancelled && data) setIsStaffSession(true);
+
+            const { data: adminData } = await supabase
+              .from('admin_profiles')
+              .select('email')
+              .ilike('email', session.user.email)
+              .maybeSingle();
+            if (!cancelled && adminData) setIsAdminSession(true);
           });
           return () => { cancelled = true; };
         }, []);
@@ -1293,8 +1308,8 @@
 
         // ── Role-based date status (campers only — counselors/teachers in
         // TeacherPortal have zero such restrictions by design, and the same
-        // now holds here via isStaffSession for staff viewing their own
-        // camper card) ────────────────────────────────────────────────────
+        // now holds here via isStaffSession/isAdminSession for staff/admins
+        // viewing their own camper card) ────────────────────────────────
         const diff = daysBeforeToday(date);       // >0 past, 0 today, <0 future
         const isToday = diff === 0;
         const isYesterday = diff === 1;
@@ -1304,9 +1319,12 @@
         // Shabbat exception: on Sundays, guarantee at least a 2-day lookback
         // (Friday + Saturday) regardless of the configured limit, since
         // campers can't mark those days in real time over Shabbat.
-        // Staff bypass allowed_back_marking_days entirely — same generous
-        // fail-open default (3650) used above while config is still loading.
-        const effectiveAllowedBackDays = isStaffSession
+        // Staff and admins bypass allowed_back_marking_days entirely — same
+        // generous fail-open default (3650) used above while config is
+        // still loading. The 4-day (or whatever is configured) limit stays
+        // strictly enforced only for actual camper profiles marking
+        // themselves.
+        const effectiveAllowedBackDays = (isStaffSession || isAdminSession)
           ? 3650
           : (isTodaySunday() ? Math.max(allowedBackDays, 2) : allowedBackDays);
 
@@ -1333,6 +1351,7 @@
             rawAllowedBackDays: allowedBackDays,
             isSunday: isTodaySunday(),
             isStaffSession,
+            isAdminSession,
             effectiveAllowedBackDays,
             minAllowedDate,
             maxAllowedDate,
@@ -1341,7 +1360,7 @@
             atOldestAllowed,
             atNewestAllowed,
           });
-        }, [configLoaded, date, allowedBackDays, isStaffSession]);
+        }, [configLoaded, date, allowedBackDays, isStaffSession, isAdminSession]);
 
         // Defense-in-depth: force `date` itself back inside [min, max] any
         // time it, or the bounds, change — not just when the arrows are
