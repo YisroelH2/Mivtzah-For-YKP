@@ -280,38 +280,47 @@
         60%      { transform: translateX(-8px); }
         80%      { transform: translateX(6px); }
       }
-      /* Gold VIP — shimmering metallic shine sweeping across the gradient. */
-      @keyframes scanner-gold-shine {
-        0%   { background-position: 0% 50%; }
-        50%  { background-position: 100% 50%; }
-        100% { background-position: 0% 50%; }
+      /* VIP (Gold/Platinum/Black) — a dead-center glow breathing behind the
+         icon/name, shared across all three tiers; only its color differs. */
+      @keyframes scanner-vip-glow-pulse {
+        0%, 100% { opacity: .6;  transform: scale(1); }
+        50%      { opacity: 1;   transform: scale(1.12); }
       }
-      /* Platinum VIP — bright white inner border glow breathing in/out. */
-      @keyframes scanner-platinum-glow {
-        0%, 100% { box-shadow: inset 0 0 50px rgba(255,255,255,.55), inset 0 0 110px rgba(148,163,184,.25); }
-        50%      { box-shadow: inset 0 0 90px rgba(255,255,255,.95), inset 0 0 160px rgba(148,163,184,.4); }
+      .scanner-vip-glow { animation: scanner-vip-glow-pulse 3.2s ease-in-out infinite; }
+      /* VIP shimmer — a diagonal light band sweeping across the icon/name/
+         headline block so the premium tiers read as "shining", not static. */
+      @keyframes scanner-shimmer-sweep {
+        0%   { transform: translateX(-160%) skewX(-12deg); }
+        100% { transform: translateX(160%) skewX(-12deg); }
       }
-      /* Black VIP — heavy, intense slow pulse across the obsidian field. */
-      @keyframes scanner-black-pulse {
-        0%, 100% { box-shadow: inset 0 0 40px rgba(251,191,36,0); filter: brightness(1); }
-        50%      { box-shadow: inset 0 0 130px rgba(251,191,36,.3); filter: brightness(1.18); }
+      .scanner-shimmer { position: relative; overflow: hidden; }
+      .scanner-shimmer::after {
+        content: '';
+        position: absolute;
+        inset: -20% -60%;
+        background: linear-gradient(100deg, transparent 42%, rgba(255,255,255,.5) 50%, transparent 58%);
+        animation: scanner-shimmer-sweep 2.8s ease-in-out infinite;
+        pointer-events: none;
       }
-      /* Admin override — cool neon-blue field pulse. */
-      @keyframes scanner-admin-pulse {
-        0%, 100% { box-shadow: inset 0 0 50px rgba(56,189,248,.12); }
-        50%      { box-shadow: inset 0 0 110px rgba(56,189,248,.32); }
+      /* Pure-white VIP name/headline text needs a heavy shadow to stay
+         readable — and premium-looking — over the bright center glow. */
+      .scanner-vip-text { text-shadow: 0 2px 6px rgba(0,0,0,.85), 0 0 26px rgba(255,255,255,.45); }
+      /* Admin — a subtle neon-cyan pulse dead-center of the pitch-black field. */
+      @keyframes scanner-admin-core-pulse {
+        0%, 100% { opacity: .45; transform: scale(1); }
+        50%      { opacity: .85; transform: scale(1.15); }
       }
+      .scanner-admin-core { animation: scanner-admin-core-pulse 2.6s ease-in-out infinite; }
+      /* Admin override banner — a slow flicker so the bottom alert strip
+         reads like a live terminal readout, distinct from the static name. */
+      @keyframes scanner-admin-banner-flicker {
+        0%, 100% { opacity: 1; }
+        50%      { opacity: .6; }
+      }
+      .scanner-admin-banner { animation: scanner-admin-banner-flicker 1.4s ease-in-out infinite; }
       .scanner-ring { animation: scanner-ring 2s ease-out infinite; }
       .scanner-pop { animation: scanner-pop .35s cubic-bezier(.2,1.4,.4,1) both; }
       .scanner-decline-shake { animation: scanner-decline-shake .5s ease-in-out; }
-      .scanner-gold-bg {
-        background-size: 220% 220%;
-        animation: scanner-gold-shine 2.6s ease-in-out infinite;
-      }
-      .scanner-platinum-bg { animation: scanner-platinum-glow 2.2s ease-in-out infinite; }
-      .scanner-black-bg { animation: scanner-black-pulse 2.6s ease-in-out infinite; }
-      .scanner-admin-bg { animation: scanner-admin-pulse 2.4s ease-in-out infinite; }
-      .scanner-text-glow { text-shadow: 0 0 14px rgba(251,191,36,.9), 0 0 32px rgba(251,191,36,.5); }
     </style>
   </head>
   <body>
@@ -1981,12 +1990,11 @@
           textClass: 'text-white',
           subTextClass: 'text-white/80',
         },
+        // Admin's interior is fully custom-rendered (split center/bottom
+        // layout) — this entry only supplies the full-screen background.
         admin: {
-          bg: 'scanner-admin-bg bg-gradient-to-br from-slate-950 via-black to-slate-900',
-          icon: ShieldCheck,
-          iconClass: 'text-sky-300 drop-shadow-[0_0_30px_rgba(56,189,248,.85)]',
-          textClass: 'text-sky-50',
-          subTextClass: 'text-sky-300/80',
+          bg: 'bg-black',
+          textClass: 'text-white',
         },
         declined: {
           bg: 'bg-gradient-to-br from-red-700 via-red-600 to-red-800',
@@ -1998,35 +2006,35 @@
       };
 
       // VIP looks are picked dynamically by the camper's point status —
-      // Gold/Platinum/Black each get a distinct premium treatment.
+      // Gold/Platinum/Black each get a distinct premium treatment, all
+      // built the same way: a deep near-black base, a massive glowing
+      // radial center-light in the tier's color, and a matching drop-
+      // shadow on the icon. Text is pure white everywhere (scanner-vip-text
+      // in the render below) so it stays legible over the bright glow.
       const VIP_SCREENS = {
         Gold: {
-          bg: 'scanner-gold-bg bg-gradient-to-br from-yellow-400 via-yellow-200 to-yellow-600',
+          bg: 'bg-slate-950 bg-[radial-gradient(circle_at_50%_42%,rgba(250,204,21,.65)_0%,rgba(180,83,9,.35)_38%,rgba(2,6,23,0)_72%)]',
+          glow: 'bg-[radial-gradient(circle,rgba(250,204,21,.6)_0%,rgba(250,204,21,.12)_45%,transparent_70%)]',
           icon: Crown,
-          iconClass: 'text-amber-900 drop-shadow-[0_0_28px_rgba(250,204,21,.95)]',
-          textClass: 'text-slate-900',
-          subTextClass: 'text-slate-800/80',
+          iconClass: 'text-yellow-300 drop-shadow-[0_0_55px_rgba(250,204,21,.95)]',
         },
         Platinum: {
-          bg: 'scanner-platinum-bg bg-gradient-to-br from-slate-300 via-gray-100 to-slate-400',
+          bg: 'bg-slate-950 bg-[radial-gradient(circle_at_50%_42%,rgba(226,232,240,.55)_0%,rgba(100,116,139,.32)_38%,rgba(2,6,23,0)_72%)]',
+          glow: 'bg-[radial-gradient(circle,rgba(226,232,240,.55)_0%,rgba(226,232,240,.12)_45%,transparent_70%)]',
           icon: Diamond,
-          iconClass: 'text-slate-700 drop-shadow-[0_0_26px_rgba(255,255,255,.95)]',
-          textClass: 'text-slate-900',
-          subTextClass: 'text-slate-700/80',
+          iconClass: 'text-slate-100 drop-shadow-[0_0_55px_rgba(226,232,240,.95)]',
         },
         Black: {
-          bg: 'scanner-black-bg bg-gradient-to-br from-gray-900 via-black to-gray-800',
+          bg: 'bg-black bg-[radial-gradient(circle_at_50%_42%,rgba(251,146,60,.4)_0%,rgba(127,29,29,.28)_38%,rgba(0,0,0,0)_72%)]',
+          glow: 'bg-[radial-gradient(circle,rgba(251,146,60,.5)_0%,rgba(251,146,60,.1)_45%,transparent_70%)]',
           icon: Badge,
-          iconClass: 'text-amber-400 drop-shadow-[0_0_30px_rgba(251,191,36,.95)]',
-          textClass: 'text-white scanner-text-glow',
-          subTextClass: 'text-amber-200/80',
+          iconClass: 'text-amber-400 drop-shadow-[0_0_55px_rgba(251,146,60,.95)]',
         },
       };
 
       const ACCESS_HEADLINES = {
         standard: 'STANDARD ACCESS GRANTED',
         vip: 'VIP ACCESS GRANTED',
-        admin: 'SYSTEM OVERRIDE / ACCESS GRANTED',
         declined: 'ACCESS DENIED',
       };
 
@@ -2115,29 +2123,32 @@
 
         useEffect(() => () => clearTimeout(resetTimerRef.current), []);
 
+        const isVip = result?.type === 'vip';
+        const isAdmin = result?.type === 'admin';
         const active = result
-          ? (result.type === 'vip' ? (VIP_SCREENS[result.pointStatus] || VIP_SCREENS.Gold) : SCANNER_SCREENS[result.type])
+          ? (isVip ? (VIP_SCREENS[result.pointStatus] || VIP_SCREENS.Gold) : SCANNER_SCREENS[result.type])
           : null;
 
         return (
           <div
             className={classNames(
-              'fixed inset-0 z-[100] flex flex-col items-center justify-center overflow-hidden px-6 text-center transition-colors duration-300',
+              'fixed inset-0 z-[100] flex flex-col items-center overflow-hidden px-6 text-center transition-colors duration-300',
+              isAdmin ? 'justify-between py-10 sm:py-14' : 'justify-center',
               active ? active.bg : 'bg-slate-950',
               active ? active.textClass : 'text-white',
               result?.type === 'declined' && 'scanner-decline-shake'
             )}
           >
-            {result?.type === 'admin' && (
-              <div className="pointer-events-none absolute inset-0">
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_30%,rgba(56,189,248,.2),transparent_60%)]" />
-                <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-sky-400/70 to-transparent" />
-                <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-sky-400/70 to-transparent" />
+            {isVip && (
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <div className={classNames('scanner-vip-glow h-72 w-72 rounded-full blur-2xl sm:h-96 sm:w-96', active.glow)} />
               </div>
             )}
 
-            {result?.type === 'vip' && result.pointStatus === 'Platinum' && (
-              <div className="pointer-events-none absolute inset-4 rounded-[2rem] border-2 border-white/70 shadow-[0_0_40px_rgba(255,255,255,.5)]" />
+            {isAdmin && (
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <div className="scanner-admin-core h-64 w-64 rounded-full bg-[radial-gradient(circle,rgba(34,211,238,.4)_0%,rgba(34,211,238,.1)_45%,transparent_70%)] blur-2xl sm:h-80 sm:w-80" />
+              </div>
             )}
 
             <button
@@ -2185,18 +2196,37 @@
               </div>
             )}
 
-            {result && active && (
-              <div className="scanner-pop relative flex flex-col items-center gap-5">
+            {/* Admin gets a fully separate layout: name/icon/status pinned
+                dead-center, the override banner detached and pushed to the
+                very bottom edge — distinct from the pop-in card the other
+                three states share. */}
+            {result && isAdmin && (
+              <React.Fragment>
+                <div className="scanner-pop relative z-10 flex flex-1 flex-col items-center justify-center gap-5">
+                  <ShieldCheck size={88} className="text-cyan-300 drop-shadow-[0_0_50px_rgba(34,211,248,.9)]" strokeWidth={1.5} />
+                  <div>
+                    <h1 className="text-4xl font-extrabold tracking-tight text-white sm:text-5xl">{result.name || 'Administrator'}</h1>
+                    <p className="mt-2 text-lg font-bold uppercase tracking-[0.25em] text-cyan-300/90">Status: Admin</p>
+                  </div>
+                </div>
+                <div className="scanner-admin-banner relative z-10 w-full border-t border-cyan-400/30 bg-cyan-400/5 px-4 py-4 font-mono text-xs font-bold uppercase tracking-[0.2em] text-cyan-300 sm:text-base sm:tracking-[0.3em]">
+                  [ SYSTEM OVERRIDE INITIATED ] — ACCESS GRANTED
+                </div>
+              </React.Fragment>
+            )}
+
+            {result && active && !isAdmin && (
+              <div className={classNames('scanner-pop relative z-10 flex flex-col items-center gap-5', isVip && 'scanner-shimmer')}>
                 <active.icon size={88} className={active.iconClass} strokeWidth={1.75} />
                 {result.type !== 'declined' && (
                   <div>
-                    <h1 className={classNames('text-4xl font-extrabold tracking-tight sm:text-5xl', active.textClass)}>{result.name || 'Unknown'}</h1>
-                    <p className={classNames('mt-2 text-lg font-bold uppercase tracking-[0.2em]', active.subTextClass)}>
-                      Status: {result.type === 'admin' ? 'Admin' : result.pointStatus}
+                    <h1 className={classNames('text-4xl font-extrabold tracking-tight sm:text-5xl', isVip ? 'text-white scanner-vip-text' : active.textClass)}>{result.name || 'Unknown'}</h1>
+                    <p className={classNames('mt-2 text-lg font-bold uppercase tracking-[0.2em]', isVip ? 'text-white/75 scanner-vip-text' : active.subTextClass)}>
+                      Status: {result.pointStatus}
                     </p>
                   </div>
                 )}
-                <p className={classNames('text-2xl font-black uppercase tracking-[0.15em] sm:text-3xl', active.textClass)}>
+                <p className={classNames('text-2xl font-black uppercase tracking-[0.15em] sm:text-3xl', isVip ? 'text-white scanner-vip-text' : active.textClass)}>
                   {ACCESS_HEADLINES[result.type]}
                 </p>
               </div>
