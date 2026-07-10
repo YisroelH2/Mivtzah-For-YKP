@@ -471,17 +471,20 @@
 
       // Fixed 5-slot legend for the roster accordion's progress dots (see
       // BunkRosterBrowser). Slot position and color are constant regardless
-      // of which items a camp has configured, so staff can memorize "Blue =
-      // Chumash, Purple = Tanya, …" instead of re-reading a dynamic list.
+      // of which items a camp has configured, so staff can memorize the
+      // color legend instead of re-reading a dynamic list. Order runs right
+      // to left: Maamar Baal Peh (red, far right) → Chumash → Tanya → Rambam
+      // → Hayom Yom (purple, far left) — so the array below is listed
+      // left-to-right, the reverse of that reading order.
       // `match` is checked as a case-insensitive substring against each
       // configured item's label, so camp-specific label wording (e.g. "Rambam
       // (1 Perek)") still lands in the right slot.
       const DAILY_PROGRESS_CATEGORIES = [
-        { label: 'Chumash',            color: 'bg-blue-500',   match: ['chumash'] },
-        { label: 'Tanya',              color: 'bg-purple-500', match: ['tanya'] },
-        { label: 'Rambam',             color: 'bg-amber-500',  match: ['rambam'] },
-        { label: 'Hayom Yom / Maamar', color: 'bg-rose-500',   match: ['hayom yom', 'maamar'] },
-        { label: 'Daily Essentials',   color: 'bg-emerald-500', match: ['mikvah', 'negel vasser'] },
+        { label: 'Hayom Yom',       color: 'bg-purple-500', match: ['hayom yom'] },
+        { label: 'Rambam',         color: 'bg-blue-500',   match: ['rambam'] },
+        { label: 'Tanya',          color: 'bg-yellow-500', match: ['tanya'] },
+        { label: 'Chumash',        color: 'bg-orange-500', match: ['chumash'] },
+        { label: 'Maamar Baal Peh', color: 'bg-red-500',    match: ['maamar'] },
       ];
 
       // Known existing columns in daily_entries — anything outside this set
@@ -3197,7 +3200,7 @@
         // whose label matches it, so a camp's actual config (which may rename
         // labels or drop items) still lights up the right dot.
         const categoryDbKeys = useMemo(() => {
-          const allItems = [...(appConfig.learning_items || []), ...(appConfig.hanhaga_items || []), ...(appConfig.teacher_items || [])];
+          const allItems = [...(appConfig.learning_items || []), ...(appConfig.teacher_items || [])];
           return DAILY_PROGRESS_CATEGORIES.map((cat) =>
             allItems
               .filter((item) => cat.match.some((m) => (item.label || '').toLowerCase().includes(m)))
@@ -3241,6 +3244,10 @@
                     <div className="grid gap-1.5 border-t line-border p-3 sm:grid-cols-2">
                       {list.map((c) => {
                         const flatEntry = todayEntryByCamper?.[c.id];
+                        const doneFlags = DAILY_PROGRESS_CATEGORIES.map(
+                          (_, i) => !!flatEntry && categoryDbKeys[i].some((key) => flatEntry[key])
+                        );
+                        const allComplete = doneFlags.every(Boolean);
                         return (
                           <button
                             key={c.id}
@@ -3249,17 +3256,14 @@
                             className="focus-ring flex items-center justify-between gap-2 rounded border line-border px-3 py-2 text-left text-sm font-bold transition hover:accent-bg"
                           >
                             <span className="truncate">{c.name}</span>
-                            <span className="flex shrink-0 gap-1">
-                              {DAILY_PROGRESS_CATEGORIES.map((cat, i) => {
-                                const done = !!flatEntry && categoryDbKeys[i].some((key) => flatEntry[key]);
-                                return (
-                                  <span
-                                    key={cat.label}
-                                    title={cat.label}
-                                    className={done ? `w-2 h-2 rounded-full ${cat.color}` : 'w-2 h-2 rounded-full border border-gray-300 bg-transparent'}
-                                  />
-                                );
-                              })}
+                            <span className={`flex shrink-0 gap-1 rounded-md border p-0.5 ${allComplete ? 'border-gray-400' : 'border-transparent'}`}>
+                              {DAILY_PROGRESS_CATEGORIES.map((cat, i) => (
+                                <span
+                                  key={cat.label}
+                                  title={cat.label}
+                                  className={doneFlags[i] ? `w-2 h-2 rounded-full ${cat.color}` : 'w-2 h-2 rounded-full border border-gray-300 bg-transparent'}
+                                />
+                              ))}
                             </span>
                           </button>
                         );
