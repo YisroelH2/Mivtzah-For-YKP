@@ -90,6 +90,26 @@
         --luxury-border: linear-gradient(120deg, #ffffff, #45484f, #f7f2df, #18191d, #ffffff);
       }
 
+      /* ── Kiosk Hardening ──────────────────────────────────────────────────
+         Pinned/kiosk PWA: campers must not be able to select text, drag
+         images, or trigger the mobile long-press callout menu. Re-enabled
+         explicitly on real input/textarea fields so staff can still type
+         names and search normally. */
+      * {
+        -webkit-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
+      }
+      input, textarea {
+        -webkit-user-select: text;
+        -moz-user-select: text;
+        -ms-user-select: text;
+        user-select: text;
+        -webkit-touch-callout: default;
+      }
+
       html, body {
         overflow-x: hidden;
         width: 100%;
@@ -742,7 +762,7 @@
             </div>
             {children}
             <div className="mx-auto mt-8 max-w-7xl px-1 text-center">
-              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V14.4.1</p>
+              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V14.5.0</p>
               <p className="muted-text mt-1 text-xs font-semibold opacity-60">Copyright 2026 HINENI SYSTEMS</p>
             </div>
           </main>
@@ -3852,7 +3872,7 @@
       // `allowed_back_marking_days` (no min/max, no isBlocked/isLocked check
       // at all) — that limit is intentionally camper-only. Only an
       // authenticated teacher_profiles session ever reaches this component.
-      function TeacherPortal({ onLogout, teacherName, bunk }) {
+      function TeacherPortal({ onLogout, teacherName, bunk, singleCamperId }) {
         const [appConfig, setAppConfig] = useState(DEFAULT_CONFIG);
         const [allCampers, setAllCampers] = useState([]);
         const [search, setSearch] = useState('');
@@ -3876,7 +3896,11 @@
         // check it against EITHER camper column — exact match only (no
         // substring/parentheses logic), case-insensitive and whitespace-trimmed.
         const exactMatch = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
-        const campers = bunk
+        // A single_camper_id profile is restricted to exactly one camper
+        // regardless of its `bunk` value — allCampers already holds only
+        // that one row (see the fetch below), so no bunk/class filtering
+        // applies here.
+        const campers = (!singleCamperId && bunk)
           ? allCampers.filter((c) => exactMatch(c.bunk, bunk) || exactMatch(c.class, bunk))
           : allCampers;
 
@@ -3885,10 +3909,23 @@
         // profile's `bunk` value, it must have matched via `class` instead,
         // which only happens for a learning teacher. Counselors' rosters stay
         // grouped by bunk; a teacher's whole roster collapses into one group.
-        const isLearningTeacher = !!bunk && !allCampers.some((c) => exactMatch(c.bunk, bunk));
+        const isLearningTeacher = !singleCamperId && !!bunk && !allCampers.some((c) => exactMatch(c.bunk, bunk));
         const singleGroupLabel = isLearningTeacher ? `${bunk}'s Class` : null;
 
+        // Restricted single-camper profiles bypass the bunk/class roster
+        // fetch entirely and pull exclusively that one camper's row (which
+        // carries real-time weekly_points via the camper_profiles view).
         useEffect(() => {
+          if (singleCamperId) {
+            Promise.all([
+              supabase.from('mivtza_config').select('config_json').limit(1).maybeSingle(),
+              supabase.from(CAMPER_READ_TABLE).select('*').eq('id', singleCamperId).maybeSingle(),
+            ]).then(([{ data: cfg }, { data: soloCamper }]) => {
+              if (cfg?.config_json) try { setAppConfig(JSON.parse(cfg.config_json)); } catch {}
+              setAllCampers(soloCamper ? [soloCamper] : []);
+            });
+            return;
+          }
           Promise.all([
             supabase.from('mivtza_config').select('config_json').limit(1).maybeSingle(),
             supabase.from(CAMPER_READ_TABLE).select('*').order('name'),
@@ -3896,7 +3933,7 @@
             if (cfg?.config_json) try { setAppConfig(JSON.parse(cfg.config_json)); } catch {}
             setAllCampers(roster || []);
           });
-        }, []);
+        }, [singleCamperId]);
 
         // Drives the at-a-glance progress dots in the roster accordion: fetches
         // every camper's full today's row (learning/teacher columns + JSONB
@@ -3906,7 +3943,9 @@
         // DAILY_PROGRESS_CATEGORIES). Reloaded after every save so the dots
         // update live as staff work through the roster.
         const loadTodayMarks = () => {
-          supabase.from('daily_entries').select('*').eq('entry_date', today()).then(({ data }) => {
+          let query = supabase.from('daily_entries').select('*').eq('entry_date', today());
+          if (singleCamperId) query = query.eq('camper_id', singleCamperId);
+          query.then(({ data }) => {
             const byCamper = {};
             (data || []).forEach((row) => {
               byCamper[row.camper_id] = { ...row, ...(row.entry_data || {}), ...(row.teacher_data || {}) };
@@ -3914,7 +3953,7 @@
             setTodayEntryByCamper(byCamper);
           });
         };
-        useEffect(() => { loadTodayMarks(); }, [appConfig]);
+        useEffect(() => { loadTodayMarks(); }, [appConfig, singleCamperId]);
 
         // Fetches whatever is already marked for this camper on the current
         // date and pre-fills the checkboxes, so the teacher sees the true,
@@ -4597,7 +4636,7 @@
       function App() {
         const [camper, setCamper] = useState(null);
         const [adminMode, setAdminMode] = useState(false);
-        const [teacherInfo, setTeacherInfo] = useState(null);  // null | {name, bunk}
+        const [teacherInfo, setTeacherInfo] = useState(null);  // null | {name, bunk, singleCamperId}
         const [clubCard, setClubCard] = useState(null);         // null | club config object
         const [sessionChecked, setSessionChecked] = useState(false);
         const isAdmin = adminMode || window.location.pathname.endsWith('/admin') || window.location.search.includes('admin');
@@ -4613,11 +4652,11 @@
           if (!session?.user?.email) return false;
           const { data: profile } = await supabase
             .from('teacher_profiles')
-            .select('name,bunk')
+            .select('name,bunk,single_camper_id')
             .ilike('email', session.user.email)
             .maybeSingle();
           if (profile) {
-            setTeacherInfo({ name: profile.name, bunk: profile.bunk });
+            setTeacherInfo({ name: profile.name, bunk: profile.bunk, singleCamperId: profile.single_camper_id });
             return true;
           }
           // Signed in but not on the allowlist — bounce them back out so
@@ -4650,7 +4689,7 @@
         // later. This guarantees the person only ever sees one screen.
         if (!sessionChecked) return <InitSplash />;
 
-        if (teacherInfo) return <ErrorBoundary><TeacherPortal onLogout={teacherLogout} teacherName={teacherInfo.name} bunk={teacherInfo.bunk} /></ErrorBoundary>;
+        if (teacherInfo) return <ErrorBoundary><TeacherPortal onLogout={teacherLogout} teacherName={teacherInfo.name} bunk={teacherInfo.bunk} singleCamperId={teacherInfo.singleCamperId} /></ErrorBoundary>;
         if (clubCard)    return <ErrorBoundary><ClubPortal onLogout={() => setClubCard(null)} club={clubCard} /></ErrorBoundary>;
         if (camper) return <ErrorBoundary><CamperDashboard camper={camper} onLogout={() => setCamper(null)} /></ErrorBoundary>;
         return <LoginScreen onCamper={setCamper} onAdmin={goAdmin} onClub={goClub} onTeacherAuthed={checkTeacherSession} />;
@@ -4679,6 +4718,13 @@
         script.src = URL.createObjectURL(blob);
         document.body.appendChild(script);
       })();
+    </script>
+    <script>
+      // Kiosk hardening: block image dragging and the right-click / long-press
+      // context menu so campers can't drag card art out or copy off the
+      // pinned PWA. Text selection is restored on inputs via CSS above.
+      document.addEventListener('dragstart', (e) => { if (e.target.tagName === 'IMG') e.preventDefault(); });
+      document.addEventListener('contextmenu', (e) => e.preventDefault());
     </script>
     <script>
       if ('serviceWorker' in navigator) {
