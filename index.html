@@ -762,7 +762,7 @@
             </div>
             {children}
             <div className="mx-auto mt-8 max-w-7xl px-1 text-center">
-              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V14.5.0</p>
+              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V14.5.1</p>
               <p className="muted-text mt-1 text-xs font-semibold opacity-60">Copyright 2026 HINENI SYSTEMS</p>
             </div>
           </main>
@@ -3213,7 +3213,7 @@
       // into per-bunk groups the way counselors' rosters are split is just
       // clutter. Pass `singleGroupLabel` to bypass bunk grouping entirely and
       // render the whole camper list as one group under that label instead.
-      function BunkRosterBrowser({ campers, onSelect, singleGroupLabel, appConfig = DEFAULT_CONFIG, todayEntryByCamper = {} }) {
+      function BunkRosterBrowser({ campers, onSelect, singleGroupLabel, appConfig = DEFAULT_CONFIG, todayEntryByCamper = {}, groupBy }) {
         const [expanded, setExpanded] = useState({});
 
         // Resolves each fixed category slot to the configured item db_key(s)
@@ -3234,11 +3234,11 @@
           }
           const map = {};
           campers.forEach((c) => {
-            const key = c.bunk || c.class || 'Unassigned';
+            const key = groupBy ? (c[groupBy] || 'Unassigned') : (c.bunk || c.class || 'Unassigned');
             (map[key] = map[key] || []).push(c);
           });
           return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0]));
-        }, [campers, singleGroupLabel]);
+        }, [campers, singleGroupLabel, groupBy]);
 
         if (groups.length === 0) return <p className="muted-text text-sm font-semibold">No campers to show.</p>;
 
@@ -4223,6 +4223,12 @@
         const [search, setSearch] = useState('');
         const [scanning, setScanning] = useState(false);
         const [submitting, setSubmitting] = useState(false);
+        // Remembers whether staff last browsed the manual-add roster grouped
+        // by Bunk or by Class — persisted per-device so the choice sticks
+        // across sessions instead of resetting to Bunk every time.
+        const [browseGroupBy, setBrowseGroupBy] = useState(
+          () => localStorage.getItem('mivtza_chitas_browse_group_by') || 'bunk'
+        );
         const toast = useToast();
         const ndefRef = useRef(null);
         // Mirrors sessionQueue as a Set for instant duplicate-tap checks
@@ -4258,6 +4264,11 @@
             setChecking(false);
           })();
         }, []);
+
+        const chooseBrowseGroupBy = (mode) => {
+          setBrowseGroupBy(mode);
+          localStorage.setItem('mivtza_chitas_browse_group_by', mode);
+        };
 
         const toggleSessionItem = (dbKey) => {
           setSessionItems((items) => items.map((i) => i.db_key === dbKey ? { ...i, checked: !i.checked } : i));
@@ -4471,10 +4482,31 @@
                   )}
                   {!search && (
                     <div className="mt-3 max-h-64 overflow-y-auto">
-                      <p className="muted-text mb-2 text-xs font-extrabold uppercase tracking-widest">Browse by Bunk</p>
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <p className="muted-text text-xs font-extrabold uppercase tracking-widest">
+                          Browse by {browseGroupBy === 'class' ? 'Class' : 'Bunk'}
+                        </p>
+                        <div className="glass-panel inline-flex shrink-0 rounded-lg p-0.5 text-xs font-extrabold">
+                          <button
+                            type="button"
+                            onClick={() => chooseBrowseGroupBy('bunk')}
+                            className={classNames('rounded-md px-2.5 py-1 transition', browseGroupBy === 'bunk' ? 'app-button' : 'muted-text')}
+                          >
+                            Bunk
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => chooseBrowseGroupBy('class')}
+                            className={classNames('rounded-md px-2.5 py-1 transition', browseGroupBy === 'class' ? 'app-button' : 'muted-text')}
+                          >
+                            Class
+                          </button>
+                        </div>
+                      </div>
                       <BunkRosterBrowser
                         campers={allCampers.filter((c) => !sessionQueue.some((q) => q.id === c.id))}
                         onSelect={(c) => addToQueue(c)}
+                        groupBy={browseGroupBy}
                       />
                     </div>
                   )}
