@@ -762,7 +762,7 @@
             </div>
             {children}
             <div className="mx-auto mt-8 max-w-7xl px-1 text-center">
-              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V14.5.1</p>
+              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V14.5.2</p>
               <p className="muted-text mt-1 text-xs font-semibold opacity-60">Copyright 2026 HINENI SYSTEMS</p>
             </div>
           </main>
@@ -3213,7 +3213,7 @@
       // into per-bunk groups the way counselors' rosters are split is just
       // clutter. Pass `singleGroupLabel` to bypass bunk grouping entirely and
       // render the whole camper list as one group under that label instead.
-      function BunkRosterBrowser({ campers, onSelect, singleGroupLabel, appConfig = DEFAULT_CONFIG, todayEntryByCamper = {}, groupBy }) {
+      function BunkRosterBrowser({ campers, onSelect, onSelectAll, singleGroupLabel, appConfig = DEFAULT_CONFIG, todayEntryByCamper = {}, groupBy }) {
         const [expanded, setExpanded] = useState({});
 
         // Resolves each fixed category slot to the configured item db_key(s)
@@ -3248,18 +3248,29 @@
               const isOpen = !!expanded[bunkName];
               return (
                 <div key={bunkName} className="glass-panel overflow-hidden rounded-lg">
-                  <button
-                    type="button"
-                    onClick={() => setExpanded((prev) => ({ ...prev, [bunkName]: !prev[bunkName] }))}
-                    className="focus-ring flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left"
-                  >
-                    <span className="flex min-w-0 items-center gap-2 font-bold">
-                      <Users size={14} className="accent-text shrink-0" />
-                      <span className="truncate">{bunkName}</span>
-                      <span className="accent-bg shrink-0 rounded-full px-2 py-0.5 text-xs font-extrabold">{list.length}</span>
-                    </span>
-                    {isOpen ? <ChevronUp size={16} className="muted-text shrink-0" /> : <ChevronDown size={16} className="muted-text shrink-0" />}
-                  </button>
+                  <div className="flex w-full items-center gap-2 px-4 py-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setExpanded((prev) => ({ ...prev, [bunkName]: !prev[bunkName] }))}
+                      className="focus-ring flex min-w-0 flex-1 items-center gap-2 text-left"
+                    >
+                      <span className="flex min-w-0 items-center gap-2 font-bold">
+                        <Users size={14} className="accent-text shrink-0" />
+                        <span className="truncate">{bunkName}</span>
+                        <span className="accent-bg shrink-0 rounded-full px-2 py-0.5 text-xs font-extrabold">{list.length}</span>
+                      </span>
+                      {isOpen ? <ChevronUp size={16} className="muted-text shrink-0" /> : <ChevronDown size={16} className="muted-text shrink-0" />}
+                    </button>
+                    {onSelectAll && list.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => onSelectAll(list)}
+                        className="focus-ring shrink-0 rounded border line-border px-2.5 py-1 text-xs font-extrabold transition hover:accent-bg"
+                      >
+                        Select All
+                      </button>
+                    )}
+                  </div>
                   {isOpen && (
                     <div className="grid gap-1.5 border-t line-border p-3 sm:grid-cols-2">
                       {list.map((c) => {
@@ -4284,6 +4295,20 @@
           toast.success(`✔ ${camper.name} added to session queue successfully!`);
         };
 
+        // Bulk add — lets a teacher/counselor queue an entire bunk or class in
+        // one tap instead of selecting each camper individually. Silently
+        // skips anyone already queued rather than duplicating them.
+        const addManyToQueue = (campersToAdd) => {
+          const newOnes = campersToAdd.filter((c) => !queueIdsRef.current.has(c.id));
+          if (newOnes.length === 0) {
+            toast.info('Everyone in this group is already in the queue.');
+            return;
+          }
+          newOnes.forEach((c) => queueIdsRef.current.add(c.id));
+          setSessionQueue((q) => [...q, ...newOnes]);
+          toast.success(`✔ ${newOnes.length} camper${newOnes.length === 1 ? '' : 's'} added to session queue successfully!`);
+        };
+
         const removeFromQueue = (camperId) => {
           queueIdsRef.current.delete(camperId);
           setSessionQueue((q) => q.filter((c) => c.id !== camperId));
@@ -4506,6 +4531,7 @@
                       <BunkRosterBrowser
                         campers={allCampers.filter((c) => !sessionQueue.some((q) => q.id === c.id))}
                         onSelect={(c) => addToQueue(c)}
+                        onSelectAll={addManyToQueue}
                         groupBy={browseGroupBy}
                       />
                     </div>
