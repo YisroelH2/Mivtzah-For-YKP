@@ -762,7 +762,7 @@
             </div>
             {children}
             <div className="mx-auto mt-8 max-w-7xl px-1 text-center">
-              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V14.5.2</p>
+              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V14.5.3</p>
               <p className="muted-text mt-1 text-xs font-semibold opacity-60">Copyright 2026 HINENI SYSTEMS</p>
             </div>
           </main>
@@ -3213,7 +3213,7 @@
       // into per-bunk groups the way counselors' rosters are split is just
       // clutter. Pass `singleGroupLabel` to bypass bunk grouping entirely and
       // render the whole camper list as one group under that label instead.
-      function BunkRosterBrowser({ campers, onSelect, onSelectAll, singleGroupLabel, appConfig = DEFAULT_CONFIG, todayEntryByCamper = {}, groupBy }) {
+      function BunkRosterBrowser({ campers, onSelect, onSelectAll, onDeselectAll, queuedIds, singleGroupLabel, appConfig = DEFAULT_CONFIG, todayEntryByCamper = {}, groupBy }) {
         const [expanded, setExpanded] = useState({});
 
         // Resolves each fixed category slot to the configured item db_key(s)
@@ -3246,6 +3246,13 @@
           <div className="grid gap-2">
             {groups.map(([bunkName, list]) => {
               const isOpen = !!expanded[bunkName];
+              // Queue membership is tracked separately from group membership
+              // (which is always the full roster) so a fully-queued group's
+              // pill stays visible with an Unselect All action, instead of
+              // vanishing once every camper in it has been added.
+              const queuedInGroup = queuedIds ? list.filter((c) => queuedIds.has(c.id)) : [];
+              const remainingInGroup = queuedIds ? list.filter((c) => !queuedIds.has(c.id)) : list;
+              const allQueued = queuedIds && list.length > 0 && remainingInGroup.length === 0;
               return (
                 <div key={bunkName} className="glass-panel overflow-hidden rounded-lg">
                   <div className="flex w-full items-center gap-2 px-4 py-2.5">
@@ -3261,19 +3268,30 @@
                       </span>
                       {isOpen ? <ChevronUp size={16} className="muted-text shrink-0" /> : <ChevronDown size={16} className="muted-text shrink-0" />}
                     </button>
-                    {onSelectAll && list.length > 0 && (
+                    {allQueued && onDeselectAll ? (
                       <button
                         type="button"
-                        onClick={() => onSelectAll(list)}
-                        className="focus-ring shrink-0 rounded border line-border px-2.5 py-1 text-xs font-extrabold transition hover:accent-bg"
+                        onClick={() => onDeselectAll(queuedInGroup)}
+                        className="focus-ring shrink-0 rounded border line-border px-2.5 py-1 text-xs font-extrabold text-red-500 transition hover:accent-bg"
                       >
-                        Select All
+                        Unselect All
                       </button>
+                    ) : (
+                      onSelectAll && remainingInGroup.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => onSelectAll(remainingInGroup)}
+                          className="focus-ring shrink-0 rounded border line-border px-2.5 py-1 text-xs font-extrabold transition hover:accent-bg"
+                        >
+                          Select All
+                        </button>
+                      )
                     )}
                   </div>
                   {isOpen && (
                     <div className="grid gap-1.5 border-t line-border p-3 sm:grid-cols-2">
                       {list.map((c) => {
+                        const isQueued = !!queuedIds && queuedIds.has(c.id);
                         const flatEntry = todayEntryByCamper?.[c.id];
                         const doneFlags = DAILY_PROGRESS_CATEGORIES.map(
                           (_, i) => !!flatEntry && categoryDbKeys[i].some((key) => flatEntry[key])
@@ -3284,18 +3302,25 @@
                             key={c.id}
                             type="button"
                             onClick={() => onSelect(c)}
-                            className="focus-ring flex items-center justify-between gap-2 rounded border line-border px-3 py-2 text-left text-sm font-bold transition hover:accent-bg"
+                            className={classNames(
+                              'focus-ring flex items-center justify-between gap-2 rounded border line-border px-3 py-2 text-left text-sm font-bold transition hover:accent-bg',
+                              isQueued && 'opacity-50'
+                            )}
                           >
                             <span className="truncate">{c.name}</span>
-                            <span className={`flex shrink-0 gap-1 rounded-md border p-0.5 ${allComplete ? 'border-gray-400' : 'border-transparent'}`}>
-                              {DAILY_PROGRESS_CATEGORIES.map((cat, i) => (
-                                <span
-                                  key={cat.label}
-                                  title={cat.label}
-                                  className={doneFlags[i] ? `w-2 h-2 rounded-full ${cat.color}` : 'w-2 h-2 rounded-full border border-gray-300 bg-transparent'}
-                                />
-                              ))}
-                            </span>
+                            {isQueued ? (
+                              <Check size={14} className="shrink-0 text-emerald-500" />
+                            ) : (
+                              <span className={`flex shrink-0 gap-1 rounded-md border p-0.5 ${allComplete ? 'border-gray-400' : 'border-transparent'}`}>
+                                {DAILY_PROGRESS_CATEGORIES.map((cat, i) => (
+                                  <span
+                                    key={cat.label}
+                                    title={cat.label}
+                                    className={doneFlags[i] ? `w-2 h-2 rounded-full ${cat.color}` : 'w-2 h-2 rounded-full border border-gray-300 bg-transparent'}
+                                  />
+                                ))}
+                              </span>
+                            )}
                           </button>
                         );
                       })}
@@ -4314,6 +4339,20 @@
           setSessionQueue((q) => q.filter((c) => c.id !== camperId));
         };
 
+        // Bulk remove — the "Unselect All" counterpart to addManyToQueue,
+        // wired to a group's pill once every camper in it is queued.
+        const removeManyFromQueue = (campersToRemove) => {
+          const ids = new Set(campersToRemove.map((c) => c.id));
+          campersToRemove.forEach((c) => queueIdsRef.current.delete(c.id));
+          setSessionQueue((q) => q.filter((c) => !ids.has(c.id)));
+          toast.info(`Removed ${campersToRemove.length} camper${campersToRemove.length === 1 ? '' : 's'} from the queue.`);
+        };
+
+        // Lets BunkRosterBrowser mark already-queued campers inline (dimmed +
+        // checkmark) instead of hiding them entirely, so a group's pill and
+        // roster stay visible even once fully queued.
+        const sessionQueueIds = useMemo(() => new Set(sessionQueue.map((c) => c.id)), [sessionQueue]);
+
         // Manual-entry roster search — lets staff check a camper into the
         // active session by typing their name, for whenever a physical NFC
         // tap isn't practical (no card on hand, card not working, etc).
@@ -4529,9 +4568,11 @@
                         </div>
                       </div>
                       <BunkRosterBrowser
-                        campers={allCampers.filter((c) => !sessionQueue.some((q) => q.id === c.id))}
-                        onSelect={(c) => addToQueue(c)}
+                        campers={allCampers}
+                        onSelect={(c) => (queueIdsRef.current.has(c.id) ? removeFromQueue(c.id) : addToQueue(c))}
                         onSelectAll={addManyToQueue}
+                        onDeselectAll={removeManyFromQueue}
+                        queuedIds={sessionQueueIds}
                         groupBy={browseGroupBy}
                       />
                     </div>
