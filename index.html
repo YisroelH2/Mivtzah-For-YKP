@@ -2122,6 +2122,22 @@
       // eligible via points, and a Gold-tier camper can be VIP-eligible too.
       const SCANNER_CACHE_KEY = 'mivtza_scanner_cache';
       const SCANNER_RESULT_MS = 3000;
+      // Per-event attendance log — who has scanned in (and how many times),
+      // keyed to the cache's cachedAt timestamp so a fresh "Launch Event
+      // Scanner" (new roster snapshot) starts a clean attendance count
+      // instead of carrying over a previous event's tally. Written to
+      // localStorage only — same offline-first contract as the cache above.
+      const SCANNER_ATTENDANCE_KEY = 'mivtza_scanner_attendance';
+      // Admin-selectable pace between the "Launch Event Scanner" button and
+      // the portal itself — how long each result screen holds before the
+      // portal is ready for the next scan. Persisted so an admin's chosen
+      // pace carries over to their next event.
+      const SCANNER_SPEED_KEY = 'mivtza_scanner_speed_ms';
+      const SCANNER_SPEED_PRESETS = [
+        { label: 'Fast', ms: 1500 },
+        { label: 'Normal', ms: SCANNER_RESULT_MS },
+        { label: 'Slow', ms: 5000 },
+      ];
       // Matches the portal's darkest background (bg-black / bg-slate-950) so
       // the mobile status bar / notch area blends into the overlay instead
       // of showing the app's default gold theme-color through it.
@@ -2183,24 +2199,41 @@
         declined: 'ACCESS DENIED',
       };
 
-      function EventScannerPortal({ onExit }) {
+      function EventScannerPortal({ onExit, resultMs = SCANNER_RESULT_MS }) {
         const [cache, setCache] = useState(null);
-        const [result, setResult] = useState(null); // null | { type, name, tier }
+        const [result, setResult] = useState(null); // null | { type, name, tier, visitCount }
         const [showManual, setShowManual] = useState(false);
         const [manualId, setManualId] = useState('');
+        const [attendance, setAttendance] = useState({}); // { [nfc_id]: { name, access, count } }
         const busyRef = useRef(false);
         const resetTimerRef = useRef(null);
         const scanBufferRef = useRef('');
         const keyTimerRef = useRef(null);
         const ndefRef = useRef(null);
+        // Mirrors `attendance` synchronously so handleScan can read/write the
+        // latest counts immediately (state updates are async and scans can
+        // arrive faster than a render cycle from a fast reader/queue).
+        const attendanceRef = useRef({});
 
         useEffect(() => {
+          let parsedCache = { campers: [], admins: [] };
           try {
             const raw = localStorage.getItem(SCANNER_CACHE_KEY);
-            setCache(raw ? JSON.parse(raw) : { campers: [], admins: [] });
-          } catch {
-            setCache({ campers: [], admins: [] });
-          }
+            parsedCache = raw ? JSON.parse(raw) : { campers: [], admins: [] };
+          } catch {}
+          setCache(parsedCache);
+
+          let entries = {};
+          try {
+            const rawAtt = localStorage.getItem(SCANNER_ATTENDANCE_KEY);
+            const parsedAtt = rawAtt ? JSON.parse(rawAtt) : null;
+            // Only reuse a saved attendance log if it belongs to this exact
+            // cache snapshot — otherwise a stale count from a prior event
+            // would carry over.
+            if (parsedAtt && parsedAtt.eventKey === parsedCache.cachedAt) entries = parsedAtt.entries || {};
+          } catch {}
+          attendanceRef.current = entries;
+          setAttendance(entries);
         }, []);
 
         // Force the mobile status bar / notch to match the portal's dark
@@ -2225,13 +2258,31 @@
           const adminMatch = (cache.admins || []).find((a) => a.nfc_id === target);
           const camperMatch = !adminMatch && (cache.campers || []).find((c) => c.nfc_id === target);
 
+          // Log every recognized camper scan (standard/vip/denied alike) so
+          // repeat scans at the door surface a small, subtle visit count —
+          // admin override taps aren't campers and are excluded entirely.
+          let visitCount = 0;
+          if (camperMatch) {
+            const prevCount = attendanceRef.current[target]?.count || 0;
+            visitCount = prevCount + 1;
+            const updated = {
+              ...attendanceRef.current,
+              [target]: { name: camperMatch.name, access: camperMatch.access, count: visitCount },
+            };
+            attendanceRef.current = updated;
+            setAttendance(updated);
+            try {
+              localStorage.setItem(SCANNER_ATTENDANCE_KEY, JSON.stringify({ eventKey: cache.cachedAt, entries: updated }));
+            } catch {}
+          }
+
           let next;
           if (adminMatch) {
             next = { type: 'admin', name: adminMatch.name };
           } else if (!camperMatch || camperMatch.access === 'denied') {
-            next = { type: 'declined', name: camperMatch?.name || '', pointStatus: camperMatch?.pointStatus || '' };
+            next = { type: 'declined', name: camperMatch?.name || '', pointStatus: camperMatch?.pointStatus || '', visitCount };
           } else {
-            next = { type: camperMatch.access, name: camperMatch.name, pointStatus: camperMatch.pointStatus };
+            next = { type: camperMatch.access, name: camperMatch.name, pointStatus: camperMatch.pointStatus, visitCount };
           }
 
           setResult(next);
@@ -2239,7 +2290,7 @@
           resetTimerRef.current = setTimeout(() => {
             setResult(null);
             busyRef.current = false;
-          }, SCANNER_RESULT_MS);
+          }, resultMs);
         };
 
         // Keyboard-wedge NFC/barcode readers act like a keyboard typing the ID
@@ -2287,6 +2338,19 @@
           ? (isVip ? (VIP_SCREENS[result.pointStatus] || VIP_SCREENS.Gold) : SCANNER_SCREENS[result.type])
           : null;
 
+        // Corner tally: unique campers actually let in (standard + vip) out
+        // of everyone eligible for this event — deliberately excludes
+        // declined scans from the numerator (they didn't "come") and admin
+        // taps entirely (not campers).
+        const attendedCount = useMemo(
+          () => Object.values(attendance).filter((e) => e.access !== 'denied').length,
+          [attendance]
+        );
+        const totalEligible = useMemo(
+          () => (cache?.campers || []).filter((c) => c.access !== 'denied').length,
+          [cache]
+        );
+
         return (
           <div
             className={classNames(
@@ -2315,6 +2379,24 @@
             >
               <X size={13} /> Exit Portal
             </button>
+
+            {/* Subtle attendee tally — unique campers let in so far out of
+                everyone eligible for this event. Deliberately understated
+                (small, low-opacity) so it never competes with the full-
+                screen result treatment. */}
+            <div className="absolute left-4 top-4 z-10 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-white/40 backdrop-blur-sm tabular-nums">
+              <Users size={13} />
+              {attendedCount}<span className="text-white/25">/</span>{totalEligible}
+            </div>
+
+            {/* Per-camper repeat-scan indicator — only appears on a second
+                (or later) scan of the same card, deliberately tiny and low-
+                contrast so the elite full-screen look is untouched. */}
+            {result && !isAdmin && result.visitCount > 1 && (
+              <p className="absolute bottom-3 right-4 z-10 text-[10px] font-semibold uppercase tracking-wider text-white/30">
+                Entrance #{result.visitCount}
+              </p>
+            )}
 
             {!result && (
               <div className="flex flex-col items-center gap-6">
@@ -2407,6 +2489,14 @@
         const [accessSearch, setAccessSearch] = useState('');
         const [historyCamper, setHistoryCamper] = useState(null);
         const [scannerOpen, setScannerOpen] = useState(false);
+        // How long each scan result holds on screen before the portal is
+        // ready for the next tap — admin-tunable via the pace popover next
+        // to "Launch Event Scanner", persisted across sessions.
+        const [scanDelayMs, setScanDelayMs] = useState(() => {
+          const stored = Number(localStorage.getItem(SCANNER_SPEED_KEY));
+          return SCANNER_SPEED_PRESETS.some((p) => p.ms === stored) ? stored : SCANNER_RESULT_MS;
+        });
+        const [showSpeedMenu, setShowSpeedMenu] = useState(false);
 
         // Stats tab — which day's logging completion to show, and the set of
         // camper IDs that already have a daily_entries row for that day.
@@ -2679,7 +2769,7 @@
         };
 
         if (scannerOpen) {
-          return <EventScannerPortal onExit={() => setScannerOpen(false)} />;
+          return <EventScannerPortal onExit={() => setScannerOpen(false)} resultMs={scanDelayMs} />;
         }
 
         return (
@@ -2703,6 +2793,36 @@
                     <ScanLine size={18} className="transition group-hover:scale-110" />
                     Launch Event Scanner
                   </button>
+                  <div className="relative">
+                    <IconButton
+                      icon={Gauge}
+                      label="Scan pace"
+                      onClick={() => setShowSpeedMenu((v) => !v)}
+                      className={showSpeedMenu ? 'bg-white/10' : ''}
+                    />
+                    {showSpeedMenu && (
+                      <div className="glass-panel absolute right-0 top-full z-20 mt-2 w-44 rounded-lg border line-border p-2 shadow-luxury">
+                        <p className="mb-1.5 px-2 pt-1 text-[11px] font-bold uppercase tracking-wide muted-text">Scan Pace</p>
+                        {SCANNER_SPEED_PRESETS.map((p) => (
+                          <button
+                            key={p.label}
+                            onClick={() => {
+                              setScanDelayMs(p.ms);
+                              localStorage.setItem(SCANNER_SPEED_KEY, String(p.ms));
+                              setShowSpeedMenu(false);
+                            }}
+                            className={classNames(
+                              'flex w-full items-center justify-between rounded px-2 py-1.5 text-sm font-semibold transition hover:bg-white/5',
+                              scanDelayMs === p.ms && 'accent-text'
+                            )}
+                          >
+                            {p.label}
+                            <span className="text-xs muted-text">{(p.ms / 1000).toFixed(1)}s</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <IconButton icon={RefreshCw} label="Refresh data" onClick={load} className={loading ? 'animate-spin' : ''} />
                 </div>
               </div>
