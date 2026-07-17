@@ -412,6 +412,13 @@
       const CAMPER_READ_TABLE  = 'camper_profiles';
       const CAMPER_WRITE_TABLE = 'campers';
 
+      // A camper's original card lives on campers.nfc_id, untouched. This
+      // table holds only *additional* cards (tier upgrades, replacements
+      // for a card that's still perfectly good) so an old working card
+      // never has to be deactivated to issue a new one.
+      const CAMPER_CARDS_TABLE = 'camper_cards';
+      const MAX_CARDS_PER_CAMPER = 3; // 1 primary (campers.nfc_id) + up to 2 additional
+
       // Local calendar date (not UTC) — using toISOString() here would grab
       // the UTC date, which lags a day behind in timezones ahead of UTC
       // (e.g. Israel) until UTC catches up, silently hiding "today" from
@@ -742,7 +749,20 @@
           .replace(/[^a-z0-9]/g, '');
       }
 
-
+      // Builds a normalized-nfc-id -> camper lookup covering every card a
+      // camper has: their primary campers.nfc_id plus any rows in
+      // camper_cards. Every "does this scanned tag belong to someone" check
+      // in the app goes through this instead of matching campers.nfc_id
+      // alone, so a camper with 2-3 cards can tap in with any of them.
+      function buildCardIndex(campers, extraCardRows) {
+        const map = new Map();
+        campers.forEach((c) => { if (c.nfc_id) map.set(normalizeNfcId(c.nfc_id), c); });
+        (extraCardRows || []).forEach((row) => {
+          const owner = campers.find((c) => c.id === row.camper_id);
+          if (owner && row.nfc_id) map.set(normalizeNfcId(row.nfc_id), owner);
+        });
+        return map;
+      }
 
       function IconButton({ icon: Icon, label, className = '', ...props }) {
         return (
@@ -793,7 +813,7 @@
             </div>
             {children}
             <div className="mx-auto mt-8 max-w-7xl px-1 text-center">
-              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V14.5.5</p>
+              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V14.5.8</p>
               <p className="muted-text mt-1 text-xs font-semibold opacity-60">Copyright 2026 HINENI SYSTEMS</p>
             </div>
           </main>
@@ -1022,11 +1042,13 @@
           try {
             const target = normalizeNfcId(nfcId);
 
-            // Fetch admin/teacher cards + camper roster in one round-trip.
+            // Fetch admin/teacher cards + camper roster (+ any additional
+            // cards on top of each camper's primary one) in one round-trip.
             // This avoids the race condition where state hasn't loaded yet.
-            const [{ data: cfgData }, { data: camperData, error: fetchError }] = await Promise.all([
+            const [{ data: cfgData }, { data: camperData, error: fetchError }, { data: extraCardData }] = await Promise.all([
               supabase.from('mivtza_config').select('admin_cards,teacher_cards').limit(1).maybeSingle(),
               supabase.from(CAMPER_READ_TABLE).select('*'),
+              supabase.from(CAMPER_CARDS_TABLE).select('camper_id,nfc_id'),
             ]);
             setBusy(false);
             setScan('');
@@ -1048,10 +1070,11 @@
               return;
             }
 
-            // Camper lookup
+            // Camper lookup — checks the primary nfc_id and any additional
+            // cards a camper has on file (tier upgrades, replaced cards).
             if (fetchError) { toast.error(`Connection error: ${fetchError.message}`); return; }
             if (!camperData || camperData.length === 0) { toast.error('No campers found — check Supabase connection.'); return; }
-            const match = camperData.find((row) => normalizeNfcId(row.nfc_id) === target);
+            const match = buildCardIndex(camperData, extraCardData).get(target);
             if (!match) { setCardNotFound(true); return; }
             onCamper(match);
           } catch (err) {
@@ -2609,16 +2632,32 @@
         const [rosterNfcListening, setRosterNfcListening] = useState(false);
         const rosterNdefRef = useRef(null);
 
+        // Tap-to-replace card scan, used while a roster row is in edit mode
+        // (e.g. a camper upgrading tiers gets a new card, or a lost card
+        // needs a fresh serial) — fills editRow.nfc_id instead of typing it.
+        const [editNfcListening, setEditNfcListening] = useState(false);
+        const editNdefRef = useRef(null);
+
+        // Additional cards on top of each camper's primary nfc_id — see
+        // buildCardIndex. Keyed loosely by camper_id, filtered per-row below.
+        const [extraCards, setExtraCards] = useState([]);
+        // Which camper's "+ Add Card" scan is currently listening (only one
+        // at a time), so the NFC onreading callback knows where to save.
+        const [addCardForId, setAddCardForId] = useState(null);
+        const addCardNdefRef = useRef(null);
+
         // New config rule
         const notify = (text, type = 'info') => type === 'error' ? toast.error(text) : toast.success(text);
 
         const load = async () => {
           setLoading(true);
-          const [{ data: roster }, { data: configRow }] = await Promise.all([
+          const [{ data: roster }, { data: configRow }, { data: extraCardRows }] = await Promise.all([
             supabase.from(CAMPER_READ_TABLE).select('*').order('name'),
             supabase.from('mivtza_config').select('id,config_json,admin_cards,week_start_date,week_end_date').limit(1).maybeSingle(),
+            supabase.from(CAMPER_CARDS_TABLE).select('id,camper_id,nfc_id'),
           ]);
           setCampers(roster || []);
+          setExtraCards(extraCardRows || []);
           if (configRow) {
             setConfigId(configRow.id || null);
             setConfigAdminCards(configRow.admin_cards || '');
@@ -2652,13 +2691,19 @@
           return () => { cancelled = true; };
         }, [tab, statsDate]);
 
-        // Shared search predicate for the roster — matches name, NFC ID, bunk, or class.
+        // A camper's additional (non-primary) cards, if any.
+        const extraCardsFor = (camperId) => extraCards.filter((row) => row.camper_id === camperId);
+
+        // Shared search predicate for the roster — matches name, bunk, class,
+        // or any of the camper's cards (primary or additional).
         const rosterMatches = (c) => {
           if (!rosterSearch) return true;
           const q = rosterSearch.toLowerCase();
+          const target = normalizeNfcId(rosterSearch);
+          const cardIds = [c.nfc_id, ...extraCardsFor(c.id).map((row) => row.nfc_id)];
           return (
             c.name?.toLowerCase().includes(q) ||
-            normalizeNfcId(c.nfc_id).includes(normalizeNfcId(rosterSearch)) ||
+            cardIds.some((id) => normalizeNfcId(id).includes(target)) ||
             c.bunk?.toLowerCase().includes(q) ||
             c.class?.toLowerCase().includes(q)
           );
@@ -2846,6 +2891,80 @@
           }
         };
 
+        // Tap a new/replacement card while a roster row is in edit mode —
+        // writes the scanned serial straight into editRow.nfc_id, same as
+        // typing it, so Save persists it as usual.
+        const startEditNfcScan = async () => {
+          if (!('NDEFReader' in window) || !window.isSecureContext) {
+            toast.warning('Web NFC not available — type the card ID manually.'); return;
+          }
+          try {
+            const ndef = new NDEFReader();
+            editNdefRef.current = ndef;
+            ndef.onreading = (event) => {
+              const serial = event.serialNumber;
+              setEditNfcListening(false);
+              if (serial) {
+                setEditRow((prev) => (prev ? { ...prev, nfc_id: serial } : prev));
+                toast.success(`Card scanned: ${serial}`);
+              } else {
+                toast.error('Card read but no serial number returned.');
+              }
+            };
+            await ndef.scan();
+            setEditNfcListening(true);
+            toast.success('Tap the new card to the back of the device…');
+          } catch (err) {
+            setEditNfcListening(false);
+            toast.error(err.message || 'NFC scan failed.');
+          }
+        };
+
+        // ── Additional cards (2nd/3rd card on the same account) ──────────────
+        // Unlike the primary NFC ID, these persist immediately on scan/delete
+        // rather than waiting for Save — same immediate-write pattern as the
+        // admin-cards list in AdminCardsPanel.
+        const addExtraCard = async (camperId, rawNfcId) => {
+          const nfcId = normalizeNfcId(rawNfcId);
+          if (!nfcId) return;
+          const totalCards = 1 + extraCardsFor(camperId).length;
+          if (totalCards >= MAX_CARDS_PER_CAMPER) {
+            toast.error(`This camper already has the max of ${MAX_CARDS_PER_CAMPER} cards.`);
+            return;
+          }
+          const { error } = await supabase.from(CAMPER_CARDS_TABLE).insert({ camper_id: camperId, nfc_id: nfcId });
+          if (error) toast.error(`Add card failed: ${error.message}`);
+          else { toast.success('Card added ✓'); load(); }
+        };
+
+        const removeExtraCard = async (cardRowId) => {
+          const { error } = await supabase.from(CAMPER_CARDS_TABLE).delete().eq('id', cardRowId);
+          if (error) toast.error(`Remove failed: ${error.message}`);
+          else { toast.success('Card removed.'); load(); }
+        };
+
+        const startAddCardScan = async (camperId) => {
+          if (!('NDEFReader' in window) || !window.isSecureContext) {
+            toast.warning('Web NFC not available — this requires a device with NFC support.'); return;
+          }
+          try {
+            const ndef = new NDEFReader();
+            addCardNdefRef.current = ndef;
+            ndef.onreading = (event) => {
+              const serial = event.serialNumber;
+              setAddCardForId(null);
+              if (serial) addExtraCard(camperId, serial);
+              else toast.error('Card read but no serial number returned.');
+            };
+            await ndef.scan();
+            setAddCardForId(camperId);
+            toast.success('Tap the additional card to the back of the device…');
+          } catch (err) {
+            setAddCardForId(null);
+            toast.error(err.message || 'NFC scan failed.');
+          }
+        };
+
         // ── Launch Event Scanner ─────────────────────────────────────────────
         // Snapshots the current roster into localStorage — name, this
         // event's door access level (standard/vip/denied, derived from
@@ -2860,17 +2979,22 @@
           let adminIds = [];
           try { adminIds = JSON.parse(configAdminCards || '[]'); } catch {}
 
+          // One cache entry per card a camper owns (primary + any
+          // additional cards) — all pointing at the same access/status, so
+          // EventScannerPortal's lookup needs no changes to recognize
+          // whichever card gets tapped at the door.
           const camperRecords = campers
             .filter((c) => c.nfc_id)
-            .map((c) => {
+            .flatMap((c) => {
               const pts = Number(c.weekly_points) || 0;
               const access = pts >= vipThreshold ? 'vip' : pts >= standardThreshold ? 'standard' : 'denied';
-              return {
-                nfc_id: normalizeNfcId(c.nfc_id),
+              const cardIds = [c.nfc_id, ...extraCardsFor(c.id).map((row) => row.nfc_id)];
+              return cardIds.map((id) => ({
+                nfc_id: normalizeNfcId(id),
                 name: c.name,
                 pointStatus: normalizeStatus(c.card_status),
                 access,
-              };
+              }));
             });
 
           const adminRecords = adminIds
@@ -3105,8 +3229,57 @@
                             </td>
                             <td className="px-4 py-2">
                               {isEditing
-                                ? <input className="w-full rounded border line-border bg-transparent px-2 py-1 font-mono text-xs" value={editRow.nfc_id} onChange={(e) => setEditRow({ ...editRow, nfc_id: e.target.value })} />
-                                : <span className="font-mono text-xs">{camper.nfc_id}</span>}
+                                ? (
+                                  <div className="grid gap-1.5">
+                                    <div className="flex items-center gap-1">
+                                      <input className="w-full min-w-0 rounded border line-border bg-transparent px-2 py-1 font-mono text-xs" value={editRow.nfc_id} onChange={(e) => setEditRow({ ...editRow, nfc_id: e.target.value })} />
+                                      <button
+                                        onClick={startEditNfcScan}
+                                        disabled={editNfcListening}
+                                        title="Tap new card to replace serial"
+                                        className="focus-ring inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border line-border disabled:opacity-70"
+                                      >
+                                        {editNfcListening ? <RefreshCw size={13} className="animate-spin" /> : <Smartphone size={13} />}
+                                      </button>
+                                    </div>
+                                    {extraCardsFor(camper.id).map((row) => (
+                                      <div key={row.id} className="flex items-center gap-1">
+                                        <span className="flex-1 truncate rounded border line-border px-2 py-1 font-mono text-[11px] muted-text">{row.nfc_id}</span>
+                                        <button
+                                          onClick={() => removeExtraCard(row.id)}
+                                          title="Remove this card"
+                                          className="focus-ring inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-red-400/40 text-red-500"
+                                        >
+                                          <X size={13} />
+                                        </button>
+                                      </div>
+                                    ))}
+                                    {1 + extraCardsFor(camper.id).length < MAX_CARDS_PER_CAMPER && (
+                                      <button
+                                        onClick={() => startAddCardScan(camper.id)}
+                                        disabled={addCardForId === camper.id}
+                                        title="Tap an additional card for this camper"
+                                        className="focus-ring inline-flex items-center gap-1 rounded border line-border px-2 py-1 text-[11px] font-bold disabled:opacity-70"
+                                      >
+                                        {addCardForId === camper.id ? <RefreshCw size={11} className="animate-spin" /> : <Plus size={11} />}
+                                        {addCardForId === camper.id ? 'Tap card…' : 'Add Card'}
+                                      </button>
+                                    )}
+                                  </div>
+                                )
+                                : (
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-mono text-xs">{camper.nfc_id}</span>
+                                    {extraCardsFor(camper.id).length > 0 && (
+                                      <span
+                                        title={extraCardsFor(camper.id).map((row) => row.nfc_id).join(', ')}
+                                        className="muted-text rounded-full border line-border px-1.5 py-0.5 text-[10px] font-bold"
+                                      >
+                                        +{extraCardsFor(camper.id).length}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
                             </td>
                             <td className="px-4 py-2">
                               {isEditing
@@ -4316,6 +4489,7 @@
         const [submitted, setSubmitted] = useState(false);
         const [showClubScanner, setShowClubScanner] = useState(false);
         const [todayEntryByCamper, setTodayEntryByCamper] = useState({}); // camper_id -> flattened {db_key: bool} for today
+        const [extraCards, setExtraCards] = useState([]); // additional cards, see buildCardIndex
         const toast = useToast();
         const ndefRef = useRef(null);
         const nfcProcessingRef = useRef(false); // debounce multiple reads
@@ -4352,18 +4526,22 @@
             Promise.all([
               supabase.from('mivtza_config').select('config_json').limit(1).maybeSingle(),
               supabase.from(CAMPER_READ_TABLE).select('*').eq('id', singleCamperId).maybeSingle(),
-            ]).then(([{ data: cfg }, { data: soloCamper }]) => {
+              supabase.from(CAMPER_CARDS_TABLE).select('camper_id,nfc_id').eq('camper_id', singleCamperId),
+            ]).then(([{ data: cfg }, { data: soloCamper }, { data: extraCardRows }]) => {
               if (cfg?.config_json) try { setAppConfig(JSON.parse(cfg.config_json)); } catch {}
               setAllCampers(soloCamper ? [soloCamper] : []);
+              setExtraCards(extraCardRows || []);
             });
             return;
           }
           Promise.all([
             supabase.from('mivtza_config').select('config_json').limit(1).maybeSingle(),
             supabase.from(CAMPER_READ_TABLE).select('*').order('name'),
-          ]).then(([{ data: cfg }, { data: roster }]) => {
+            supabase.from(CAMPER_CARDS_TABLE).select('camper_id,nfc_id'),
+          ]).then(([{ data: cfg }, { data: roster }, { data: extraCardRows }]) => {
             if (cfg?.config_json) try { setAppConfig(JSON.parse(cfg.config_json)); } catch {}
             setAllCampers(roster || []);
+            setExtraCards(extraCardRows || []);
           });
         }, [singleCamperId]);
 
@@ -4420,7 +4598,7 @@
               setTimeout(() => { nfcProcessingRef.current = false; }, 2500);
               setNfcListening(false);
               const target = normalizeNfcId(e.serialNumber || '');
-              const match = campers.find((c) => normalizeNfcId(c.nfc_id) === target);
+              const match = buildCardIndex(campers, extraCards).get(target);
               if (match) selectCamper(match);
               else toast.warning('Card not in your class roster.');
             };
@@ -4651,6 +4829,7 @@
         // actually gets submitted — see submitSession below.
         const [sessionItems, setSessionItems] = useState([]); // [{db_key,label,points,checked}]
         const [allCampers, setAllCampers] = useState([]);
+        const [extraCards, setExtraCards] = useState([]); // additional cards, see buildCardIndex
         const [sessionQueue, setSessionQueue] = useState([]);
         const [search, setSearch] = useState('');
         const [scanning, setScanning] = useState(false);
@@ -4671,11 +4850,13 @@
         useEffect(() => {
           (async () => {
             setChecking(true);
-            const [{ data: cfgRow }, { data: roster }] = await Promise.all([
+            const [{ data: cfgRow }, { data: roster }, { data: extraCardRows }] = await Promise.all([
               supabase.from('mivtza_config').select('config_json, club_cards').limit(1).maybeSingle(),
               supabase.from(CAMPER_READ_TABLE).select('id,name,nfc_id,bunk,class'),
+              supabase.from(CAMPER_CARDS_TABLE).select('camper_id,nfc_id'),
             ]);
             setAllCampers(roster || []);
+            setExtraCards(extraCardRows || []);
 
             let cfg = DEFAULT_CONFIG;
             if (cfgRow?.config_json) try { cfg = JSON.parse(cfgRow.config_json); } catch {}
@@ -4771,7 +4952,7 @@
             ndefRef.current = ndef;
             ndef.onreading = (e) => {
               const target = normalizeNfcId(e.serialNumber || '');
-              const match = allCampers.find((c) => normalizeNfcId(c.nfc_id) === target);
+              const match = buildCardIndex(allCampers, extraCards).get(target);
               if (match) addToQueue(match);
               else toast.warning('Card not found in roster.');
             };
@@ -5013,6 +5194,7 @@
       function ClubPortal({ onLogout, club }) {
         const [appConfig, setAppConfig] = useState(DEFAULT_CONFIG);
         const [allCampers, setAllCampers] = useState([]);
+        const [extraCards, setExtraCards] = useState([]); // additional cards, see buildCardIndex
         const [lastResult, setLastResult] = useState(null); // {name, success}
         const [nfcActive, setNfcActive] = useState(false);
         const toast = useToast();
@@ -5023,15 +5205,17 @@
           Promise.all([
             supabase.from('mivtza_config').select('config_json').limit(1).maybeSingle(),
             supabase.from(CAMPER_READ_TABLE).select('*'),
-          ]).then(([{ data: cfg }, { data: roster }]) => {
+            supabase.from(CAMPER_CARDS_TABLE).select('camper_id,nfc_id'),
+          ]).then(([{ data: cfg }, { data: roster }, { data: extraCardRows }]) => {
             if (cfg?.config_json) try { setAppConfig(JSON.parse(cfg.config_json)); } catch {}
             setAllCampers(roster || []);
+            setExtraCards(extraCardRows || []);
           });
         }, []);
 
         const creditStudent = async (nfcId) => {
           const target = normalizeNfcId(nfcId);
-          const camper = allCampers.find((c) => normalizeNfcId(c.nfc_id) === target);
+          const camper = buildCardIndex(allCampers, extraCards).get(target);
           if (!camper) { setLastResult({ name: `Unknown (${nfcId})`, success: false }); return; }
 
           // Build the entry payload for just the club's items
