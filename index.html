@@ -383,6 +383,7 @@
         CreditCard,
         Crown,
         Diamond,
+        Filter,
         Gauge,
         KeyRound,
         Lock,
@@ -2551,6 +2552,11 @@
         );
       }
 
+      // Saved points-threshold filters for the roster table (e.g. "Weekly
+      // >= 1000"), persisted so an admin's presets carry over between
+      // sessions on the same device.
+      const POINTS_FILTERS_KEY = 'mivtza_points_filters';
+
       function AdminDashboard() {
         const [tab, setTab] = useState('dashboard'); // 'dashboard' | 'roster' | 'stats' | 'setup'
         const toast = useToast();
@@ -2563,6 +2569,17 @@
         const [loading, setLoading] = useState(true);
         const [rosterSearch, setRosterSearch] = useState('');
         const [accessSearch, setAccessSearch] = useState('');
+
+        // Saved points-threshold filters (roster tab) — an array of
+        // { id, metric: 'weekly_points'|'total_points', direction: 'above'|'below', value },
+        // plus which one (if any) is currently applied to the table.
+        const [pointsFilters, setPointsFilters] = useState(() => {
+          try { return JSON.parse(localStorage.getItem(POINTS_FILTERS_KEY)) || []; } catch { return []; }
+        });
+        const [activePointsFilterId, setActivePointsFilterId] = useState(null);
+        const [filterMetric, setFilterMetric] = useState('weekly_points');
+        const [filterDirection, setFilterDirection] = useState('above');
+        const [filterValue, setFilterValue] = useState('');
         const [historyCamper, setHistoryCamper] = useState(null);
         const [scannerOpen, setScannerOpen] = useState(false);
         // How long each scan result holds on screen before the portal is
@@ -2616,6 +2633,10 @@
 
         useEffect(() => { load(); }, []);
 
+        useEffect(() => {
+          localStorage.setItem(POINTS_FILTERS_KEY, JSON.stringify(pointsFilters));
+        }, [pointsFilters]);
+
         // Loads which campers already have a daily_entries row for statsDate,
         // for the Stats tab's "logged today" tally. Only fetches while that
         // tab is actually visible.
@@ -2641,6 +2662,27 @@
             c.bunk?.toLowerCase().includes(q) ||
             c.class?.toLowerCase().includes(q)
           );
+        };
+
+        // Saves the currently-configured metric/direction/value as a new
+        // reusable filter and immediately applies it to the roster.
+        const addPointsFilter = () => {
+          const value = Number(filterValue);
+          if (filterValue.trim() === '' || isNaN(value)) return;
+          const filter = { id: `${Date.now()}`, metric: filterMetric, direction: filterDirection, value };
+          setPointsFilters((prev) => [...prev, filter]);
+          setActivePointsFilterId(filter.id);
+          setFilterValue('');
+        };
+        const deletePointsFilter = (id) => {
+          setPointsFilters((prev) => prev.filter((f) => f.id !== id));
+          setActivePointsFilterId((cur) => (cur === id ? null : cur));
+        };
+        const activePointsFilter = pointsFilters.find((f) => f.id === activePointsFilterId) || null;
+        const pointsFilterMatches = (c) => {
+          if (!activePointsFilter) return true;
+          const val = Number(c[activePointsFilter.metric] || 0);
+          return activePointsFilter.direction === 'above' ? val >= activePointsFilter.value : val <= activePointsFilter.value;
         };
 
         // Shared search predicate for the event-access columns — matches name,
@@ -2929,6 +2971,91 @@
 
               {tab === 'roster' && (<>
 
+              {/* ── Points Filter ── */}
+              <section className="glass-panel rounded-lg p-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <Filter className="accent-text shrink-0" size={18} />
+                  <h2 className="text-base font-extrabold">Points Filter</h2>
+                  {activePointsFilter && (
+                    <button
+                      onClick={() => setActivePointsFilterId(null)}
+                      className="focus-ring ml-auto rounded-full px-3 py-1 text-xs font-extrabold glass-panel"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex overflow-hidden rounded border line-border">
+                    <button
+                      onClick={() => setFilterMetric('weekly_points')}
+                      className={classNames('px-3 py-2 text-xs font-extrabold transition', filterMetric === 'weekly_points' ? 'app-button' : 'glass-panel')}
+                    >
+                      Weekly Pts
+                    </button>
+                    <button
+                      onClick={() => setFilterMetric('total_points')}
+                      className={classNames('px-3 py-2 text-xs font-extrabold transition', filterMetric === 'total_points' ? 'app-button' : 'glass-panel')}
+                    >
+                      Lifetime Pts
+                    </button>
+                  </div>
+                  <div className="flex overflow-hidden rounded border line-border">
+                    <button
+                      onClick={() => setFilterDirection('above')}
+                      className={classNames('inline-flex items-center gap-1 px-3 py-2 text-xs font-extrabold transition', filterDirection === 'above' ? 'app-button' : 'glass-panel')}
+                    >
+                      <ChevronUp size={13} /> Above
+                    </button>
+                    <button
+                      onClick={() => setFilterDirection('below')}
+                      className={classNames('inline-flex items-center gap-1 px-3 py-2 text-xs font-extrabold transition', filterDirection === 'below' ? 'app-button' : 'glass-panel')}
+                    >
+                      <ChevronDown size={13} /> Below
+                    </button>
+                  </div>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={filterValue}
+                    onChange={(e) => setFilterValue(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') addPointsFilter(); }}
+                    placeholder="Points"
+                    className="glass-panel focus-ring w-28 rounded px-3 py-2 text-sm font-semibold outline-none"
+                  />
+                  <button
+                    onClick={addPointsFilter}
+                    disabled={filterValue.trim() === ''}
+                    className="app-button focus-ring inline-flex items-center gap-1 rounded px-3 py-2 text-xs font-extrabold disabled:opacity-50"
+                  >
+                    <Plus size={14} /> Save Filter
+                  </button>
+                </div>
+
+                {pointsFilters.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2 border-t line-border pt-3">
+                    {pointsFilters.map((f) => (
+                      <span key={f.id} className="inline-flex items-center">
+                        <button
+                          onClick={() => setActivePointsFilterId((cur) => (cur === f.id ? null : f.id))}
+                          className={classNames('focus-ring rounded-l-full py-1.5 pl-4 pr-2 text-xs font-extrabold transition', activePointsFilterId === f.id ? 'app-button' : 'glass-panel')}
+                        >
+                          {f.metric === 'weekly_points' ? 'Weekly' : 'Lifetime'} {f.direction === 'above' ? '≥' : '≤'} {f.value}
+                        </button>
+                        <button
+                          onClick={() => deletePointsFilter(f.id)}
+                          title="Delete filter"
+                          className={classNames('focus-ring rounded-r-full py-1.5 pr-3 pl-1 transition', activePointsFilterId === f.id ? 'app-button' : 'glass-panel')}
+                        >
+                          <X size={13} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </section>
+
               {/* ── Roster ── */}
               <section className="glass-panel overflow-hidden rounded-lg shadow-luxury">
                 <div className="flex flex-wrap items-center gap-3 border-b line-border p-4">
@@ -2954,7 +3081,7 @@
                     {rosterNfcListening ? 'Scanning…' : 'Scan to Find'}
                   </button>
                   <span className="muted-text text-xs font-semibold">
-                    {campers.filter(rosterMatches).length} / {campers.length}
+                    {campers.filter(rosterMatches).filter(pointsFilterMatches).length} / {campers.length}
                   </span>
                 </div>
                 <div className="overflow-x-auto">
@@ -2967,7 +3094,7 @@
                       </tr>
                     </thead>
                     <tbody>
-                      {campers.filter(rosterMatches).map((camper) => {
+                      {campers.filter(rosterMatches).filter(pointsFilterMatches).map((camper) => {
                         const isEditing = editRow?.id === camper.id;
                         return (
                           <tr key={camper.id} className="border-t line-border">
