@@ -762,7 +762,7 @@
             </div>
             {children}
             <div className="mx-auto mt-8 max-w-7xl px-1 text-center">
-              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V14.5.3</p>
+              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V14.5.4</p>
               <p className="muted-text mt-1 text-xs font-semibold opacity-60">Copyright 2026 HINENI SYSTEMS</p>
             </div>
           </main>
@@ -1373,7 +1373,17 @@
         // still loading. The 4-day (or whatever is configured) limit stays
         // strictly enforced only for actual camper profiles marking
         // themselves.
-        const effectiveAllowedBackDays = (isStaffSession || isAdminSession)
+        //
+        // isAdminSession alone isn't enough: it only becomes true once an
+        // async admin_profiles lookup resolves against a *real Supabase
+        // Auth* session, which an admin who only ever unlocked the Admin
+        // Portal via the shared passcode (no email/password sign-in) never
+        // has. sessionStorage's 'mivtza_admin_unlocked' flag — set by
+        // AdminGate the moment this browser tab is admin-unlocked by any
+        // method, and still readable here even after navigating away from
+        // ?admin=1 — is the reliable signal that this is an admin.
+        const isAdminPortalUnlocked = sessionStorage.getItem('mivtza_admin_unlocked') === '1';
+        const effectiveAllowedBackDays = (isStaffSession || isAdminSession || isAdminPortalUnlocked)
           ? 3650
           : (isTodaySunday() ? Math.max(allowedBackDays, 2) : allowedBackDays);
 
@@ -1401,6 +1411,7 @@
             isSunday: isTodaySunday(),
             isStaffSession,
             isAdminSession,
+            isAdminPortalUnlocked,
             effectiveAllowedBackDays,
             minAllowedDate,
             maxAllowedDate,
@@ -1409,7 +1420,7 @@
             atOldestAllowed,
             atNewestAllowed,
           });
-        }, [configLoaded, date, allowedBackDays, isStaffSession, isAdminSession]);
+        }, [configLoaded, date, allowedBackDays, isStaffSession, isAdminSession, isAdminPortalUnlocked]);
 
         // Defense-in-depth: force `date` itself back inside [min, max] any
         // time it, or the bounds, change — not just when the arrows are
@@ -1685,6 +1696,18 @@
             if (data) { sessionStorage.setItem('mivtza_admin_unlocked', '1'); setUnlocked(true); }
           });
         }, []);
+
+        // Persist the unlock flag even on the `!adminCode` fast path (no
+        // passcode configured, so `unlocked` starts true and none of the
+        // unlock handlers below ever run to set it themselves). Without
+        // this, CamperDashboard's admin back-marking bypass — which trusts
+        // this same sessionStorage flag — would never see it set for an
+        // admin whose only "login" was landing on ?admin=1 with no code
+        // configured, and they'd get held to the camper day-limit the next
+        // time they tapped their own NFC card outside the admin route.
+        useEffect(() => {
+          if (unlocked) sessionStorage.setItem('mivtza_admin_unlocked', '1');
+        }, [unlocked]);
 
         if (unlocked) return children;
 
