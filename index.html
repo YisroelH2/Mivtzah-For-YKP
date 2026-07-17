@@ -109,6 +109,14 @@
         user-select: text;
         -webkit-touch-callout: default;
       }
+      /* Admin portal is staff-only, not kiosk-facing — let them select/copy text normally. */
+      .admin-portal-text-select, .admin-portal-text-select * {
+        -webkit-user-select: text;
+        -moz-user-select: text;
+        -ms-user-select: text;
+        user-select: text;
+        -webkit-touch-callout: default;
+      }
 
       html, body {
         overflow-x: hidden;
@@ -1733,7 +1741,7 @@
           return () => { cancelled = true; };
         }, [unlocked]);
 
-        if (unlocked) return children;
+        if (unlocked) return <div className="admin-portal-text-select">{children}</div>;
 
         const unlockWithPasscode = () => {
           if (code === adminCode) {
