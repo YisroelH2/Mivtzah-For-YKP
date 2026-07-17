@@ -658,6 +658,28 @@
       const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1naXdlZnNidml4bG5sb2twbHBqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExMzcxODYsImV4cCI6MjA5NjcxMzE4Nn0.j7kP1moUmcbBFuf3Iz4yZmlLGdjJf-3yBfbu1HXGF78';
       const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
 
+      // Shadow admin account — see AdminGate. The passcode/URL-based admin
+      // unlock is purely client-side and never creates a Supabase Auth
+      // session, so Postgres triggers (which can only see auth.email())
+      // have no way to know "this write came from an admin." AdminGate
+      // silently signs in as this dedicated account the moment it unlocks
+      // by any method, so admin_profiles-based checks — client AND
+      // database-side — work without changing what the admin actually
+      // sees or types. Credentials are fetched from app_config at runtime
+      // (keys 'admin_portal_email' / 'admin_portal_password') rather than
+      // hardcoded here, so this file has nothing secret-shaped to leak via
+      // git history — same runtime exposure as SUPABASE_ANON above either
+      // way, since both are readable by anyone with the anon key.
+      async function getAdminPortalCredentials() {
+        const { data } = await supabase
+          .from('app_config')
+          .select('key,value')
+          .in('key', ['admin_portal_email', 'admin_portal_password']);
+        const email = data?.find((r) => r.key === 'admin_portal_email')?.value;
+        const password = data?.find((r) => r.key === 'admin_portal_password')?.value;
+        return email && password ? { email, password } : null;
+      }
+
       // Admin passcode lives only in localStorage — no server involved.
       function getAdminCode() { return localStorage.getItem('mivtza_admin_code') || ''; }
       function saveAdminCode(code) { localStorage.setItem('mivtza_admin_code', code.trim()); }
@@ -762,7 +784,7 @@
             </div>
             {children}
             <div className="mx-auto mt-8 max-w-7xl px-1 text-center">
-              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V14.5.4</p>
+              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V14.5.5</p>
               <p className="muted-text mt-1 text-xs font-semibold opacity-60">Copyright 2026 HINENI SYSTEMS</p>
             </div>
           </main>
@@ -1707,6 +1729,34 @@
         // time they tapped their own NFC card outside the admin route.
         useEffect(() => {
           if (unlocked) sessionStorage.setItem('mivtza_admin_unlocked', '1');
+        }, [unlocked]);
+
+        // Shadow sign-in: the moment this tab is admin-unlocked by ANY
+        // method (passcode, no-code fast path, or a real email/password
+        // sign-in), silently establish a genuine Supabase Auth session so
+        // the daily_entries date-limit trigger — which can only see
+        // auth.email(), never this passcode or the sessionStorage flag —
+        // recognizes writes made in this tab as coming from an admin. Skips
+        // itself if a real session already exists (e.g. the admin just
+        // signed in with their own email/password below) so it never
+        // clobbers a legitimate personal session.
+        useEffect(() => {
+          if (!unlocked) return;
+          let cancelled = false;
+          supabase.auth.getSession().then(async ({ data: { session } }) => {
+            if (cancelled || session?.user?.email) return;
+            const creds = await getAdminPortalCredentials();
+            if (cancelled) return;
+            if (!creds) {
+              console.warn('[Mivtza] admin_portal_email/admin_portal_password not set in app_config — database-level admin exemptions (e.g. back-marking limit) will not apply this session.');
+              return;
+            }
+            const { error: shadowError } = await supabase.auth.signInWithPassword(creds);
+            if (shadowError) {
+              console.warn('[Mivtza] admin shadow sign-in failed — database-level admin exemptions (e.g. back-marking limit) will not apply this session:', shadowError.message);
+            }
+          });
+          return () => { cancelled = true; };
         }, [unlocked]);
 
         if (unlocked) return children;
