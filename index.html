@@ -2142,6 +2142,12 @@
       // the mobile status bar / notch area blends into the overlay instead
       // of showing the app's default gold theme-color through it.
       const SCANNER_THEME_COLOR = '#000000';
+      // Best-effort haptic pulse — most browsers gate navigator.vibrate
+      // behind a user-activation requirement and iOS Safari doesn't support
+      // it at all, so this silently no-ops rather than breaking a scan.
+      const scannerVibrate = (pattern) => {
+        try { navigator.vibrate?.(pattern); } catch {}
+      };
 
       const SCANNER_SCREENS = {
         standard: {
@@ -2205,6 +2211,7 @@
         const [showManual, setShowManual] = useState(false);
         const [manualId, setManualId] = useState('');
         const [attendance, setAttendance] = useState({}); // { [nfc_id]: { name, access, count } }
+        const [showSummary, setShowSummary] = useState(false);
         const busyRef = useRef(false);
         const resetTimerRef = useRef(null);
         const scanBufferRef = useRef('');
@@ -2249,8 +2256,37 @@
           };
         }, []);
 
+        // Keep the screen from dimming/locking for the whole time the door
+        // is open — a scanner nobody's actively tapping shouldn't go dark
+        // between arrivals. The OS releases the lock whenever the tab is
+        // backgrounded, so it's re-requested on visibilitychange. Purely
+        // best-effort: unsupported browsers (e.g. older iOS Safari) just
+        // keep working without it.
+        useEffect(() => {
+          let wakeLock = null;
+          let cancelled = false;
+          const requestWakeLock = async () => {
+            if (!('wakeLock' in navigator)) return;
+            try {
+              wakeLock = await navigator.wakeLock.request('screen');
+            } catch {
+              // Ignore — e.g. battery saver or the tab isn't focused yet.
+            }
+          };
+          requestWakeLock();
+          const onVisibility = () => {
+            if (!cancelled && document.visibilityState === 'visible') requestWakeLock();
+          };
+          document.addEventListener('visibilitychange', onVisibility);
+          return () => {
+            cancelled = true;
+            document.removeEventListener('visibilitychange', onVisibility);
+            if (wakeLock) wakeLock.release().catch(() => {});
+          };
+        }, []);
+
         const handleScan = (rawId) => {
-          if (!cache || busyRef.current) return;
+          if (!cache || busyRef.current || showSummary) return;
           const target = normalizeNfcId(rawId);
           if (!target) return;
           busyRef.current = true;
@@ -2279,10 +2315,13 @@
           let next;
           if (adminMatch) {
             next = { type: 'admin', name: adminMatch.name };
+            scannerVibrate(20);
           } else if (!camperMatch || camperMatch.access === 'denied') {
             next = { type: 'declined', name: camperMatch?.name || '', pointStatus: camperMatch?.pointStatus || '', visitCount };
+            scannerVibrate([30, 80, 30]);
           } else {
             next = { type: camperMatch.access, name: camperMatch.name, pointStatus: camperMatch.pointStatus, visitCount };
+            scannerVibrate(30);
           }
 
           setResult(next);
@@ -2297,7 +2336,7 @@
         // followed by Enter — mirrors the same pattern CamperCheckIn uses.
         useEffect(() => {
           const onKey = (e) => {
-            if (showManual) return;
+            if (showManual || showSummary) return;
             if (e.key === 'Enter') {
               const buf = scanBufferRef.current.trim();
               scanBufferRef.current = '';
@@ -2311,7 +2350,7 @@
           };
           document.addEventListener('keydown', onKey);
           return () => { document.removeEventListener('keydown', onKey); clearTimeout(keyTimerRef.current); };
-        }, [showManual, cache]);
+        }, [showManual, showSummary, cache]);
 
         // Web NFC (Android Chrome) — taps resolve the same way as a keyboard-wedge scan.
         useEffect(() => {
@@ -2351,6 +2390,61 @@
           [cache]
         );
 
+        // End-of-night breakdown shown on Exit — built from the same
+        // attendance log driving the corner tally, so there's nothing new
+        // to persist for it.
+        const summaryStats = useMemo(() => {
+          const entries = Object.values(attendance);
+          const vipCount = entries.filter((e) => e.access === 'vip').length;
+          const standardCount = entries.filter((e) => e.access === 'standard').length;
+          const declinedCount = entries.filter((e) => e.access === 'denied').length;
+          const repeatScans = entries.reduce((sum, e) => sum + Math.max(0, (e.count || 1) - 1), 0);
+          return { vipCount, standardCount, declinedCount, repeatScans, total: vipCount + standardCount };
+        }, [attendance]);
+
+        if (showSummary) {
+          return (
+            <div className="fixed inset-0 z-[9999] flex h-[100dvh] w-full flex-col items-center justify-center gap-8 overflow-hidden bg-slate-950 bg-[radial-gradient(circle_at_50%_28%,rgba(56,189,248,.16)_0%,rgba(2,6,23,0)_70%)] px-6 text-center text-white">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.35em] text-white/40">Event Summary</p>
+                <h1 className="mt-3 text-6xl font-black tabular-nums sm:text-7xl">{summaryStats.total}</h1>
+                <p className="mt-2 text-sm font-semibold uppercase tracking-[0.25em] text-white/50">Campers Welcomed</p>
+              </div>
+              <div className="flex gap-8 sm:gap-12">
+                {[
+                  { label: 'VIP', value: summaryStats.vipCount },
+                  { label: 'Standard', value: summaryStats.standardCount },
+                  { label: 'Declined', value: summaryStats.declinedCount },
+                ].map((s) => (
+                  <div key={s.label}>
+                    <p className="text-3xl font-extrabold tabular-nums">{s.value}</p>
+                    <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.2em] text-white/40">{s.label}</p>
+                  </div>
+                ))}
+              </div>
+              {summaryStats.repeatScans > 0 && (
+                <p className="text-xs font-semibold text-white/30">
+                  {summaryStats.repeatScans} repeat scan{summaryStats.repeatScans === 1 ? '' : 's'} recorded
+                </p>
+              )}
+              <div className="mt-2 flex gap-3">
+                <button
+                  onClick={() => setShowSummary(false)}
+                  className="focus-ring rounded-lg border border-white/15 bg-white/5 px-5 py-2.5 text-sm font-semibold text-white/70 backdrop-blur-sm transition hover:bg-white/10 hover:text-white"
+                >
+                  Back to Scanning
+                </button>
+                <button
+                  onClick={onExit}
+                  className="focus-ring rounded-lg bg-white px-5 py-2.5 text-sm font-bold text-slate-950 transition hover:scale-[1.03]"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          );
+        }
+
         return (
           <div
             className={classNames(
@@ -2374,7 +2468,7 @@
             )}
 
             <button
-              onClick={onExit}
+              onClick={() => setShowSummary(true)}
               className="focus-ring absolute right-4 top-4 z-10 inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-white/50 backdrop-blur-sm transition hover:bg-white/10 hover:text-white/90"
             >
               <X size={13} /> Exit Portal
