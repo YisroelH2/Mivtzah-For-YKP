@@ -813,7 +813,7 @@
             </div>
             {children}
             <div className="mx-auto mt-8 max-w-7xl px-1 text-center">
-              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V14.5.8</p>
+              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V14.5.9</p>
               <p className="muted-text mt-1 text-xs font-semibold opacity-60">Copyright 2026 HINENI SYSTEMS</p>
             </div>
           </main>
@@ -2299,17 +2299,29 @@
 
           const adminMatch = (cache.admins || []).find((a) => a.nfc_id === target);
           const camperMatch = !adminMatch && (cache.campers || []).find((c) => c.nfc_id === target);
+          // Keyed by camper_id (not the scanned card) so tapping either of a
+          // camper's 2-3 cards during the same event counts as one person,
+          // not one per card. Unrecognized cards have no camper_id, so they
+          // fall back to the raw scanned id — each unknown card its own entry.
+          const attendanceKey = camperMatch ? camperMatch.camper_id : target;
 
-          // Log every recognized camper scan (standard/vip/denied alike) so
-          // repeat scans at the door surface a small, subtle visit count —
-          // admin override taps aren't campers and are excluded entirely.
+          // Log every non-admin scan — a recognized camper (standard/vip/
+          // denied alike) AND an unrecognized card, which also renders as
+          // "declined" below. Both need to land in the attendance log so
+          // the end-of-night Declined count matches what actually appeared
+          // on screen — only admin override taps aren't campers and stay
+          // excluded entirely.
           let visitCount = 0;
-          if (camperMatch) {
-            const prevCount = attendanceRef.current[target]?.count || 0;
+          if (!adminMatch) {
+            const prevCount = attendanceRef.current[attendanceKey]?.count || 0;
             visitCount = prevCount + 1;
             const updated = {
               ...attendanceRef.current,
-              [target]: { name: camperMatch.name, access: camperMatch.access, count: visitCount },
+              [attendanceKey]: {
+                name: camperMatch ? camperMatch.name : '',
+                access: camperMatch ? camperMatch.access : 'denied',
+                count: visitCount,
+              },
             };
             attendanceRef.current = updated;
             setAttendance(updated);
@@ -2391,10 +2403,18 @@
           () => Object.values(attendance).filter((e) => e.access !== 'denied').length,
           [attendance]
         );
-        const totalEligible = useMemo(
-          () => (cache?.campers || []).filter((c) => c.access !== 'denied').length,
-          [cache]
-        );
+        const totalEligible = useMemo(() => {
+          // cache.campers has one row per card, so dedupe multi-card campers
+          // back down to one person before counting who's eligible.
+          const seen = new Set();
+          let count = 0;
+          (cache?.campers || []).forEach((c) => {
+            if (c.access === 'denied' || seen.has(c.camper_id)) return;
+            seen.add(c.camper_id);
+            count += 1;
+          });
+          return count;
+        }, [cache]);
 
         // End-of-night breakdown shown on Exit — built from the same
         // attendance log driving the corner tally, so there's nothing new
@@ -2982,7 +3002,9 @@
           // One cache entry per card a camper owns (primary + any
           // additional cards) — all pointing at the same access/status, so
           // EventScannerPortal's lookup needs no changes to recognize
-          // whichever card gets tapped at the door.
+          // whichever card gets tapped at the door. camper_id is carried
+          // along so the portal can dedupe a multi-card camper back down
+          // to one person for the eligible/attended counts.
           const camperRecords = campers
             .filter((c) => c.nfc_id)
             .flatMap((c) => {
@@ -2991,6 +3013,7 @@
               const cardIds = [c.nfc_id, ...extraCardsFor(c.id).map((row) => row.nfc_id)];
               return cardIds.map((id) => ({
                 nfc_id: normalizeNfcId(id),
+                camper_id: c.id,
                 name: c.name,
                 pointStatus: normalizeStatus(c.card_status),
                 access,
@@ -3968,11 +3991,15 @@
         const [backfillOpenDate, setBackfillOpenDate] = useState(null); // date string | null
         const [extraDaysBack, setExtraDaysBack] = useState(0); // days pushed before periodStart via "Load More"
 
-        const reloadEntries = () => {
-          setLoading(true);
+        // silent=true skips the loading flag entirely — used after an
+        // add/delete/backfill so the timeline doesn't collapse to "Loading
+        // history…" and lose its scroll position on every single tap. Only
+        // the very first fetch (on open) shows that loading state.
+        const reloadEntries = ({ silent } = {}) => {
+          if (!silent) setLoading(true);
           return supabase.from('daily_entries').select('*').eq('camper_id', camper.id).then(({ data }) => {
             setEntries(data || []);
-            setLoading(false);
+            if (!silent) setLoading(false);
           });
         };
 
@@ -4068,7 +4095,7 @@
           }
           if (error) { toast.error(error.message); return; }
           toast.success('Log entry deleted ✓');
-          reloadEntries();
+          reloadEntries({ silent: true });
           refreshCamperTotals();
         };
 
@@ -4108,7 +4135,7 @@
           // Deliberately NOT closing the picker here — an admin should be
           // able to click Chumash, then Tanya, then Rambam for the same day
           // without the dropdown vanishing after every single click.
-          reloadEntries();
+          reloadEntries({ silent: true });
           refreshCamperTotals();
         };
 
@@ -4788,12 +4815,12 @@
                     <p className="glass-panel rounded-xl p-5 text-sm font-semibold muted-text">No learning or teacher items configured. Add them in Admin → App Configuration.</p>
                   )}
 
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <button onClick={() => submit(false)} className="app-button focus-ring flex w-full items-center justify-center gap-2 rounded-xl px-5 py-5 text-lg font-extrabold">
-                      {submitted ? <><BadgeCheck size={22}/> Saved!</> : <><Save size={22}/> Save & Next Student</>}
+                  <div className="flex gap-3">
+                    <button onClick={() => submit(false)} className="app-button focus-ring flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-5 text-center text-base font-extrabold">
+                      {submitted ? <><BadgeCheck size={20}/> Saved!</> : <><Save size={20}/> Save & Next Student</>}
                     </button>
-                    <button onClick={() => submit(true)} className="lux-card focus-ring flex w-full items-center justify-center gap-2 rounded-xl px-5 py-5 text-lg font-extrabold shadow-luxury" title="Save this entry and keep this camper open so you can pick another date">
-                      {submitted ? <><BadgeCheck size={22}/> Saved!</> : <><PencilLine size={22}/> Save & Keep Editing</>}
+                    <button onClick={() => submit(true)} className="lux-card focus-ring flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-5 text-center text-base font-extrabold shadow-luxury" title="Save this entry and keep this camper open so you can pick another date">
+                      {submitted ? <><BadgeCheck size={20}/> Saved!</> : <><PencilLine size={20}/> Save & Keep Editing</>}
                     </button>
                   </div>
                 </div>
