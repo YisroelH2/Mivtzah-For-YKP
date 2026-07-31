@@ -813,7 +813,7 @@
             </div>
             {children}
             <div className="mx-auto mt-8 max-w-7xl px-1 text-center">
-              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V14.6.0</p>
+              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V14.6.1</p>
               <p className="muted-text mt-1 text-xs font-semibold opacity-60">Copyright 2026 HINENI SYSTEMS</p>
             </div>
           </main>
@@ -2791,6 +2791,26 @@
           else { toast.success('Period deleted.'); load(); }
         };
 
+        // Editing the current period's dates also has to update mivtza_config,
+        // since that's what camper_profiles.weekly_points actually sums
+        // against — otherwise the Dashboard's "Current" label would drift
+        // from what the live view is really scoring.
+        const editPeriod = async (id, { label, start_date, end_date }) => {
+          const period = periods.find((p) => p.id === id);
+          if (!period) return;
+          const { error } = await supabase.from('competition_periods').update({ label, start_date, end_date }).eq('id', id);
+          if (error) { toast.error(`Edit failed: ${error.message}`); return; }
+          if (period.is_current) {
+            const payload = { week_start_date: start_date, week_end_date: end_date };
+            const { error: cfgError } = configId
+              ? await supabase.from('mivtza_config').update(payload).eq('id', configId)
+              : await supabase.from('mivtza_config').upsert(payload);
+            if (cfgError) toast.error(`Config update failed: ${cfgError.message}`);
+          }
+          toast.success('Period updated ✓');
+          load();
+        };
+
         useEffect(() => {
           localStorage.setItem(POINTS_FILTERS_KEY, JSON.stringify(pointsFilters));
         }, [pointsFilters]);
@@ -3631,7 +3651,7 @@
               <BulkImportPanel campers={campers} onDone={load} />
 
               {/* ── Competition Periods ── */}
-              <CompetitionPeriodsPanel periods={periods} onAdd={addPeriod} onSetCurrent={setCurrentPeriod} onDelete={deletePeriod} />
+              <CompetitionPeriodsPanel periods={periods} onAdd={addPeriod} onEdit={editPeriod} onSetCurrent={setCurrentPeriod} onDelete={deletePeriod} />
 
               {/* ── Structured App Configuration ── */}
               <section className="glass-panel rounded-lg p-5">
@@ -3717,12 +3737,16 @@
       // Adding one WITHOUT "make current" just adds a historical record —
       // e.g. to recover a period that was already rolled past before this
       // feature existed, as long as you know its original date range.
-      function CompetitionPeriodsPanel({ periods, onAdd, onSetCurrent, onDelete }) {
+      function CompetitionPeriodsPanel({ periods, onAdd, onEdit, onSetCurrent, onDelete }) {
         const [label, setLabel] = useState('');
         const [start, setStart] = useState('');
         const [end, setEnd] = useState('');
         const [makeCurrent, setMakeCurrent] = useState(true);
         const [busy, setBusy] = useState(false);
+
+        // Inline edit — one row at a time, prefilled from that period.
+        const [editingId, setEditingId] = useState(null);
+        const [editDraft, setEditDraft] = useState({ label: '', start: '', end: '' });
 
         const submit = async () => {
           if (!label.trim() || !start || !end) return;
@@ -3730,6 +3754,16 @@
           await onAdd({ label: label.trim(), start_date: start, end_date: end, makeCurrent });
           setBusy(false);
           setLabel(''); setStart(''); setEnd(''); setMakeCurrent(true);
+        };
+
+        const startEdit = (p) => {
+          setEditingId(p.id);
+          setEditDraft({ label: p.label, start: p.start_date, end: p.end_date });
+        };
+        const saveEdit = async () => {
+          if (!editDraft.label.trim() || !editDraft.start || !editDraft.end) return;
+          await onEdit(editingId, { label: editDraft.label.trim(), start_date: editDraft.start, end_date: editDraft.end });
+          setEditingId(null);
         };
 
         return (
@@ -3740,28 +3774,54 @@
             <div className="mb-4 grid gap-2">
               {periods.length === 0 && <p className="muted-text text-sm font-semibold">No periods yet — add your first one below.</p>}
               {periods.map((p) => (
-                <div key={p.id} className="flex flex-wrap items-center gap-2 rounded border line-border px-3 py-2">
-                  <span className="font-extrabold">{p.label}</span>
-                  <span className="muted-text text-xs font-semibold">{p.start_date} → {p.end_date}</span>
-                  {p.is_current
-                    ? <span className="accent-bg ml-auto rounded-full px-2.5 py-0.5 text-xs font-extrabold">Current</span>
-                    : (
+                <div key={p.id} className="rounded border line-border px-3 py-2">
+                  {editingId === p.id ? (
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      <TextInput icon={CalendarDays} placeholder="Label" value={editDraft.label} onChange={(e) => setEditDraft({ ...editDraft, label: e.target.value })} />
+                      <input className="focus-ring rounded border line-border bg-transparent px-3 py-2 text-sm font-bold" type="date" value={editDraft.start} onChange={(e) => setEditDraft({ ...editDraft, start: e.target.value })} />
+                      <input className="focus-ring rounded border line-border bg-transparent px-3 py-2 text-sm font-bold" type="date" value={editDraft.end} onChange={(e) => setEditDraft({ ...editDraft, end: e.target.value })} />
+                      <div className="col-span-full flex items-center gap-2">
+                        <button
+                          onClick={saveEdit}
+                          disabled={!editDraft.label.trim() || !editDraft.start || !editDraft.end}
+                          className="app-button focus-ring inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-extrabold disabled:opacity-50"
+                        >
+                          <Save size={13} /> Save
+                        </button>
+                        <button onClick={() => setEditingId(null)} className="focus-ring rounded border line-border px-3 py-1.5 text-xs font-extrabold">Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-extrabold">{p.label}</span>
+                      <span className="muted-text text-xs font-semibold">{p.start_date} → {p.end_date}</span>
+                      {p.is_current && <span className="accent-bg rounded-full px-2.5 py-0.5 text-xs font-extrabold">Current</span>}
                       <div className="ml-auto flex items-center gap-1.5">
                         <button
-                          onClick={() => onSetCurrent(p.id)}
-                          className="focus-ring rounded border line-border px-2.5 py-1 text-xs font-extrabold transition hover:accent-bg"
+                          onClick={() => startEdit(p)}
+                          title="Edit period"
+                          className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded border line-border hover:scale-105"
                         >
-                          Set Current
+                          <PencilLine size={13} />
                         </button>
-                        <button
-                          onClick={() => onDelete(p.id)}
-                          title="Delete period"
-                          className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded border border-red-400/40 text-red-500 hover:scale-105"
-                        >
-                          <Trash2 size={13} />
-                        </button>
+                        {!p.is_current && (<>
+                          <button
+                            onClick={() => onSetCurrent(p.id)}
+                            className="focus-ring rounded border line-border px-2.5 py-1 text-xs font-extrabold transition hover:accent-bg"
+                          >
+                            Set Current
+                          </button>
+                          <button
+                            onClick={() => onDelete(p.id)}
+                            title="Delete period"
+                            className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded border border-red-400/40 text-red-500 hover:scale-105"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </>)}
                       </div>
-                    )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
