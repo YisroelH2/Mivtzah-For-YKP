@@ -813,7 +813,7 @@
             </div>
             {children}
             <div className="mx-auto mt-8 max-w-7xl px-1 text-center">
-              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V14.5.9</p>
+              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V14.5.10</p>
               <p className="muted-text mt-1 text-xs font-semibold opacity-60">Copyright 2026 HINENI SYSTEMS</p>
             </div>
           </main>
@@ -2612,6 +2612,7 @@
         const [loading, setLoading] = useState(true);
         const [rosterSearch, setRosterSearch] = useState('');
         const [accessSearch, setAccessSearch] = useState('');
+        const [statusSearch, setStatusSearch] = useState('');
 
         // Saved points-threshold filters (roster tab) — an array of
         // { id, metric: 'weekly_points'|'total_points', direction: 'above'|'below', value },
@@ -2750,11 +2751,12 @@
           return activePointsFilter.direction === 'above' ? val >= activePointsFilter.value : val <= activePointsFilter.value;
         };
 
-        // Shared search predicate for the event-access columns — matches name,
+        // Shared search predicate factory for the dashboard's grouped-list
+        // columns (event-access and card-status alike) — matches name,
         // bunk/class (with or without a "Bunk " prefix), or an exact points value.
-        const accessMatches = (c) => {
-          if (!accessSearch) return true;
-          const q = accessSearch.trim().toLowerCase();
+        const searchMatches = (query) => (c) => {
+          if (!query) return true;
+          const q = query.trim().toLowerCase();
           const qStripped = q.replace(/^bunk\s*/, '').trim();
           const bunk = String(c.bunk || '').toLowerCase();
           const cls = String(c.class || '').toLowerCase();
@@ -2765,10 +2767,18 @@
             (qStripped !== '' && !isNaN(Number(qStripped)) && Number(c.weekly_points) === Number(qStripped))
           );
         };
+        const accessMatches = searchMatches(accessSearch);
+        const statusMatches = searchMatches(statusSearch);
 
         const vip = campers.filter((c) => Number(c.weekly_points) >= Number(appConfig.vip_event_threshold ?? 700));
         const standard = campers.filter((c) => Number(c.weekly_points) >= Number(appConfig.standard_event_threshold ?? 400) && Number(c.weekly_points) < Number(appConfig.vip_event_threshold ?? 700));
         const notEligible = campers.filter((c) => Number(c.weekly_points) < Number(appConfig.standard_event_threshold ?? 400));
+
+        // Card tier groups — card_status (Gold/Platinum/Black), unrelated to
+        // the points-based event-access eligibility above.
+        const goldStatus = campers.filter((c) => normalizeStatus(c.card_status) === 'Gold');
+        const platinumStatus = campers.filter((c) => normalizeStatus(c.card_status) === 'Platinum');
+        const blackStatus = campers.filter((c) => normalizeStatus(c.card_status) === 'Black');
 
         // ── Stats tab derived numbers ─────────────────────────────────────
         const statsLoggedSet = useMemo(() => new Set(statsLoggedIds), [statsLoggedIds]);
@@ -3112,6 +3122,28 @@
                 <AccessList title="VIP Event Access" icon={Sparkles} campers={vip.filter(accessMatches)} onSelect={setHistoryCamper} />
                 <AccessList title="Standard Event Access" icon={BadgeCheck} campers={standard.filter(accessMatches)} onSelect={setHistoryCamper} />
                 <AccessList title="Not Eligible" icon={X} campers={notEligible.filter(accessMatches)} onSelect={setHistoryCamper} />
+              </section>
+
+              {/* ── Card status groups — Gold/Platinum/Black tier, searchable and copyable ── */}
+              <h2 className="mt-2 flex items-center gap-2 text-lg font-extrabold"><CreditCard className="accent-text" /> Card Status</h2>
+
+              <section className="glass-panel rounded-lg p-4">
+                <label className="flex items-center gap-3 rounded-lg px-2 py-1">
+                  <ScanLine size={18} className="accent-text shrink-0" />
+                  <input
+                    className="w-full bg-transparent text-base font-semibold outline-none placeholder:font-medium"
+                    placeholder="Search by name, bunk/class, or exact points…"
+                    value={statusSearch}
+                    onChange={(e) => setStatusSearch(e.target.value)}
+                  />
+                  {statusSearch && <button onClick={() => setStatusSearch('')} className="shrink-0"><X size={16} /></button>}
+                </label>
+              </section>
+
+              <section className="grid gap-4 lg:grid-cols-3">
+                <AccessList title="Gold Status" icon={Crown} campers={goldStatus.filter(statusMatches)} onSelect={setHistoryCamper} />
+                <AccessList title="Platinum Status" icon={Diamond} campers={platinumStatus.filter(statusMatches)} onSelect={setHistoryCamper} />
+                <AccessList title="Black Status" icon={Badge} campers={blackStatus.filter(statusMatches)} onSelect={setHistoryCamper} />
               </section>
 
               </>)}
