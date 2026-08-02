@@ -804,7 +804,7 @@
                 <div>
                   <p className="text-sm font-extrabold uppercase tracking-[0.16em]">
                     Mivtza Amek
-                    {admin && <span className="muted-text ml-2 align-middle text-[10px] font-semibold tracking-widest opacity-60">V14.6.6</span>}
+                    {admin && <span className="muted-text ml-2 align-middle text-[10px] font-semibold tracking-widest opacity-60">V14.6.7</span>}
                   </p>
                   <p className="muted-text text-xs font-semibold">Learn. Do. Earn. Grow.</p>
                 </div>
@@ -816,7 +816,7 @@
             </div>
             {children}
             <div className="mx-auto mt-8 max-w-7xl px-1 text-center">
-              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V14.6.6</p>
+              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V14.6.7</p>
               <p className="muted-text mt-1 text-xs font-semibold opacity-60">Copyright 2026 HINENI SYSTEMS</p>
             </div>
           </main>
@@ -2986,6 +2986,11 @@
         const registerCamper = async () => {
           if (!newCamper.name.trim()) { notify('Please enter a camper name.', 'error'); return; }
           if (!newCamper.nfc_id.trim()) { notify('Please enter or scan a card ID.', 'error'); return; }
+          const existingOwner = buildCardIndex(campers, extraCards).get(normalizeNfcId(newCamper.nfc_id));
+          if (existingOwner) {
+            notify(`This card is already registered to ${existingOwner.name}.`, 'error');
+            return;
+          }
           const payload = {
             name: newCamper.name.trim(),
             nfc_id: newCamper.nfc_id.trim(),
@@ -3025,6 +3030,11 @@
         // ── Inline edit save ────────────────────────────────────────────────
         const saveEdit = async () => {
           if (!editRow) return;
+          const existingOwner = buildCardIndex(campers, extraCards).get(normalizeNfcId(editRow.nfc_id));
+          if (existingOwner && existingOwner.id !== editRow.id) {
+            toast.error(`This card is already registered to ${existingOwner.name}.`);
+            return;
+          }
           const { data, error } = await supabase
             .from(CAMPER_WRITE_TABLE)
             .update({ name: editRow.name, nfc_id: editRow.nfc_id, bunk: editRow.bunk || null, class: editRow.class || null })
