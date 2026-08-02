@@ -813,7 +813,7 @@
             </div>
             {children}
             <div className="mx-auto mt-8 max-w-7xl px-1 text-center">
-              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V14.6.2</p>
+              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V14.6.3</p>
               <p className="muted-text mt-1 text-xs font-semibold opacity-60">Copyright 2026 HINENI SYSTEMS</p>
             </div>
           </main>
@@ -2127,6 +2127,10 @@
       // These are unrelated: a Black-tier camper can still only be VIP-
       // eligible via points, and a Gold-tier camper can be VIP-eligible too.
       const SCANNER_CACHE_KEY = 'mivtza_scanner_cache';
+      // Tab-lifetime flag so an accidental page refresh (or pull-to-refresh
+      // on the door tablet) drops back into the scanner instead of the
+      // admin dashboard — see the scannerOpen useEffect below.
+      const SCANNER_OPEN_KEY = 'mivtza_scanner_open';
       const SCANNER_RESULT_MS = 3000;
       // Per-event attendance log — who has scanned in (and how many times),
       // keyed to the cache's cachedAt timestamp so a fresh "Launch Event
@@ -2259,6 +2263,24 @@
           if (meta) meta.setAttribute('content', SCANNER_THEME_COLOR);
           return () => {
             if (meta && previous !== null) meta.setAttribute('content', previous);
+          };
+        }, []);
+
+        // Block the browser's pull-to-refresh gesture for as long as the
+        // portal is mounted — a door volunteer's stray swipe shouldn't be
+        // able to reload the tab mid-event. This is a body-level gesture,
+        // so it has to be suppressed on <html>/<body>, not just the portal's
+        // own (already non-scrolling) container.
+        useEffect(() => {
+          const html = document.documentElement;
+          const body = document.body;
+          const prevHtml = html.style.overscrollBehaviorY;
+          const prevBody = body.style.overscrollBehaviorY;
+          html.style.overscrollBehaviorY = 'contain';
+          body.style.overscrollBehaviorY = 'contain';
+          return () => {
+            html.style.overscrollBehaviorY = prevHtml;
+            body.style.overscrollBehaviorY = prevBody;
           };
         }, []);
 
@@ -2430,7 +2452,7 @@
 
         if (showSummary) {
           return (
-            <div className="fixed inset-0 z-[9999] flex h-[100dvh] w-full flex-col items-center justify-center gap-8 overflow-hidden bg-slate-950 bg-[radial-gradient(circle_at_50%_28%,rgba(56,189,248,.16)_0%,rgba(2,6,23,0)_70%)] px-6 text-center text-white">
+            <div className="fixed inset-0 z-[9999] flex h-[100dvh] w-full flex-col items-center justify-center gap-8 overflow-hidden bg-slate-950 bg-[radial-gradient(circle_at_50%_28%,rgba(56,189,248,.16)_0%,rgba(2,6,23,0)_70%)] px-6 text-center text-white" style={{ overscrollBehavior: 'none' }}>
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.35em] text-white/40">Event Summary</p>
                 <h1 className="mt-3 text-6xl font-black tabular-nums sm:text-7xl">{summaryStats.total}</h1>
@@ -2480,6 +2502,7 @@
               active ? active.textClass : 'text-white',
               result?.type === 'declined' && 'scanner-decline-shake'
             )}
+            style={{ overscrollBehavior: 'none' }}
           >
             {isVip && (
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -2633,7 +2656,17 @@
         const [filterDirection, setFilterDirection] = useState('above');
         const [filterValue, setFilterValue] = useState('');
         const [historyCamper, setHistoryCamper] = useState(null);
-        const [scannerOpen, setScannerOpen] = useState(false);
+        const [scannerOpen, setScannerOpen] = useState(() => sessionStorage.getItem(SCANNER_OPEN_KEY) === '1');
+        // Keep sessionStorage in sync so a refresh while the scanner is open
+        // (device reload, accidental pull-to-refresh) re-enters the scanner
+        // on the next mount instead of dumping the door volunteer back to
+        // the roster/dashboard. Tab-lifetime only — closing the tab clears it.
+        useEffect(() => {
+          try {
+            if (scannerOpen) sessionStorage.setItem(SCANNER_OPEN_KEY, '1');
+            else sessionStorage.removeItem(SCANNER_OPEN_KEY);
+          } catch {}
+        }, [scannerOpen]);
         // How long each scan result holds on screen before the portal is
         // ready for the next tap — admin-tunable via the pace popover next
         // to "Launch Event Scanner", persisted across sessions.
@@ -4288,6 +4321,7 @@
         const [editValue, setEditValue] = useState('');
         const [backfillOpenDate, setBackfillOpenDate] = useState(null); // date string | null
         const [extraDaysBack, setExtraDaysBack] = useState(0); // days pushed before periodStart via "Load More"
+        const [showThroughToday, setShowThroughToday] = useState(false); // pulls rangeEnd past a selected period's end date, up to today
 
         // silent=true skips the loading flag entirely — used after an
         // add/delete/backfill so the timeline doesn't collapse to "Loading
@@ -4343,7 +4377,11 @@
         const basePeriodStart = periodStart || shiftDate(today(), -13);
         const basePeriodEnd = periodEnd || today();
         const rangeStart = shiftDate(basePeriodStart, -extraDaysBack);
-        const rangeEnd = basePeriodEnd < today() ? basePeriodEnd : today();
+        // A selected competition period whose end date has already passed
+        // caps the view at that end date by default — "Show Dates Through
+        // Today" (below) pulls rangeEnd out to today on demand instead.
+        const canShowThroughToday = !showThroughToday && basePeriodEnd < today();
+        const rangeEnd = showThroughToday ? today() : (basePeriodEnd < today() ? basePeriodEnd : today());
         const allDates = enumerateDateRange(rangeStart, rangeEnd).reverse();
 
         // Entries are fetched unfiltered by date (see reloadEntries above), so
@@ -4617,6 +4655,20 @@
                     );
                   })}
                 </div>
+
+                {/* Show Dates Through Today — only appears when the selected
+                    period's end date is in the past, so the timeline is
+                    otherwise capped there. One tap pulls rangeEnd out to
+                    today; unlike "Load More Past History" this isn't
+                    incremental since there's a fixed number of days to add. */}
+                {!loading && canShowThroughToday && (
+                  <button
+                    onClick={() => setShowThroughToday(true)}
+                    className="focus-ring mt-4 w-full rounded-lg border border-dashed line-border px-4 py-2.5 text-xs font-extrabold uppercase tracking-widest muted-text transition hover:accent-text hover:border-solid"
+                  >
+                    Show Dates Through Today
+                  </button>
+                )}
 
                 {/* Load More Past History — extends rangeStart further back;
                     hidden once we've reached the oldest entry_date we have on
