@@ -3110,6 +3110,13 @@
             toast.error(`This camper already has the max of ${MAX_CARDS_PER_CAMPER} cards.`);
             return;
           }
+          const existingOwner = buildCardIndex(campers, extraCards).get(nfcId);
+          if (existingOwner) {
+            toast.error(existingOwner.id === camperId
+              ? 'This card is already registered to this camper.'
+              : `This card is already registered to ${existingOwner.name}.`);
+            return;
+          }
           const { error } = await supabase.from(CAMPER_CARDS_TABLE).insert({ camper_id: camperId, nfc_id: nfcId });
           if (error) toast.error(`Add card failed: ${error.message}`);
           else { toast.success('Card added ✓'); load(); }
@@ -3488,7 +3495,7 @@
                                     </div>
                                     {extraCardsFor(camper.id).map((row) => (
                                       <div key={row.id} className="flex items-center gap-1">
-                                        <span className="flex-1 truncate rounded border line-border px-2 py-1 font-mono text-[11px] muted-text">{row.nfc_id}</span>
+                                        <span className="min-w-0 flex-1 truncate rounded border line-border px-2 py-1 font-mono text-xs" title={row.nfc_id}>{row.nfc_id}</span>
                                         <button
                                           onClick={() => removeExtraCard(row.id)}
                                           title="Remove this card"
