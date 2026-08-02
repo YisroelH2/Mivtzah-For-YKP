@@ -813,7 +813,7 @@
             </div>
             {children}
             <div className="mx-auto mt-8 max-w-7xl px-1 text-center">
-              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V14.6.1</p>
+              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V14.6.2</p>
               <p className="muted-text mt-1 text-xs font-semibold opacity-60">Copyright 2026 HINENI SYSTEMS</p>
             </div>
           </main>
@@ -2685,6 +2685,7 @@
         // at a time), so the NFC onreading callback knows where to save.
         const [addCardForId, setAddCardForId] = useState(null);
         const addCardNdefRef = useRef(null);
+        const addCardProcessingRef = useRef(false);
 
         // New config rule
         const notify = (text, type = 'info') => type === 'error' ? toast.error(text) : toast.success(text);
@@ -3095,6 +3096,11 @@
             const ndef = new NDEFReader();
             addCardNdefRef.current = ndef;
             ndef.onreading = (event) => {
+              // Debounce: NFC hardware often fires onreading 3-5× per tap,
+              // and each firing would otherwise insert the same card again.
+              if (addCardProcessingRef.current) return;
+              addCardProcessingRef.current = true;
+              setTimeout(() => { addCardProcessingRef.current = false; }, 2500);
               const serial = event.serialNumber;
               setAddCardForId(null);
               if (serial) addExtraCard(camperId, serial);
