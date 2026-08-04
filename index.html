@@ -372,6 +372,7 @@
         Award,
         Badge,
         BadgeCheck,
+        Ban,
         BarChart3,
         CalendarDays,
         Check,
@@ -727,6 +728,17 @@
         return value;
       }
 
+      // A ban with no ban_expires_at is indefinite. One with a past
+      // ban_expires_at has lapsed even if `banned` hasn't been cleared in
+      // the DB yet — callers that read a lapsed ban are expected to self-heal
+      // by clearing it (see load() in AdminDashboard and fetchCamper in
+      // LoginScreen) since nothing else clears it for them.
+      function isBanActive(camper) {
+        if (!camper?.banned) return false;
+        if (!camper.ban_expires_at) return true;
+        return new Date(camper.ban_expires_at).getTime() > Date.now();
+      }
+
       function normalizeStatus(status) {
         if (!status) return 'Gold';
         const cleaned = String(status).trim().toLowerCase();
@@ -804,7 +816,7 @@
                 <div>
                   <p className="text-sm font-extrabold uppercase tracking-[0.16em]">
                     Mivtza Amek
-                    {admin && <span className="muted-text ml-2 align-middle text-[10px] font-semibold tracking-widest opacity-60">V14.6.7</span>}
+                    {admin && <span className="muted-text ml-2 align-middle text-[10px] font-semibold tracking-widest opacity-60">V14.7.0</span>}
                   </p>
                   <p className="muted-text text-xs font-semibold">Learn. Do. Earn. Grow.</p>
                 </div>
@@ -816,7 +828,7 @@
             </div>
             {children}
             <div className="mx-auto mt-8 max-w-7xl px-1 text-center">
-              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V14.6.7</p>
+              <p className="muted-text text-[10px] font-semibold tracking-widest opacity-40">V14.7.0</p>
               <p className="muted-text mt-1 text-xs font-semibold opacity-60">Copyright 2026 HINENI SYSTEMS</p>
             </div>
           </main>
@@ -1006,6 +1018,7 @@
         const [scan, setScan] = useState('');
         const [busy, setBusy] = useState(false);
         const [cardNotFound, setCardNotFound] = useState(false);
+        const [bannedCamper, setBannedCamper] = useState(null);
         const [nfcListening, setNfcListening] = useState(false);
         const [nfcMessage, setNfcMessage] = useState('');
         const [showManual, setShowManual] = useState(false);
@@ -1042,6 +1055,7 @@
           if (!navigator.onLine) { toast.offline(); return; }
           setBusy(true);
           setCardNotFound(false);
+          setBannedCamper(null);
           try {
             const target = normalizeNfcId(nfcId);
 
@@ -1079,6 +1093,12 @@
             if (!camperData || camperData.length === 0) { toast.error('No campers found — check Supabase connection.'); return; }
             const match = buildCardIndex(camperData, extraCardData).get(target);
             if (!match) { setCardNotFound(true); return; }
+            if (isBanActive(match)) { setBannedCamper(match); return; }
+            if (match.banned) {
+              // Ban lapsed since it was set — clear it now that we've noticed,
+              // there's no cron doing this in the background.
+              supabase.from(CAMPER_WRITE_TABLE).update({ banned: false, ban_reason: null, ban_expires_at: null }).eq('id', match.id).then(() => {});
+            }
             onCamper(match);
           } catch (err) {
             setBusy(false); setScan('');
@@ -1158,6 +1178,30 @@
                   <button
                     className="app-button focus-ring mt-6 w-full rounded-xl px-5 py-4 font-extrabold"
                     onClick={() => setCardNotFound(false)}
+                  >
+                    Got It
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── Banned camper modal ── */}
+            {bannedCamper && (
+              <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 backdrop-blur-md p-6">
+                <div className="lux-card w-full max-w-sm rounded-2xl p-8 text-center shadow-luxury">
+                  <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-red-500/15 border border-red-400/30">
+                    <Ban size={32} className="text-red-400" strokeWidth={1.5} />
+                  </div>
+                  <h2 className="text-2xl font-extrabold">You Have Been Banned</h2>
+                  <p className="muted-text mt-2 text-sm font-semibold leading-relaxed">
+                    {bannedCamper.ban_reason || 'Your card has been suspended.'}<br />
+                    {bannedCamper.ban_expires_at
+                      ? `This ban lifts automatically on ${new Date(bannedCamper.ban_expires_at).toLocaleString()}.`
+                      : 'See your counselor for more information.'}
+                  </p>
+                  <button
+                    className="app-button focus-ring mt-6 w-full rounded-xl px-5 py-4 font-extrabold"
+                    onClick={() => setBannedCamper(null)}
                   >
                     Got It
                   </button>
@@ -2183,6 +2227,13 @@
           textClass: 'text-white',
           subTextClass: 'text-white/80',
         },
+        banned: {
+          bg: 'bg-gradient-to-br from-slate-950 via-red-950 to-black',
+          icon: Ban,
+          iconClass: 'text-red-400 drop-shadow-[0_0_26px_rgba(248,113,113,.75)]',
+          textClass: 'text-white',
+          subTextClass: 'text-white/80',
+        },
       };
 
       // VIP looks are picked dynamically by the camper's point status —
@@ -2216,6 +2267,7 @@
         standard: 'STANDARD ACCESS GRANTED',
         vip: 'VIP ACCESS GRANTED',
         declined: 'ACCESS DENIED',
+        banned: 'BANNED — ENTRY DENIED',
       };
 
       function EventScannerPortal({ onExit, resultMs = SCANNER_RESULT_MS }) {
@@ -2359,6 +2411,9 @@
           if (adminMatch) {
             next = { type: 'admin', name: adminMatch.name };
             scannerVibrate(20);
+          } else if (camperMatch && camperMatch.access === 'banned') {
+            next = { type: 'banned', name: camperMatch.name, visitCount };
+            scannerVibrate([30, 80, 30]);
           } else if (!camperMatch || camperMatch.access === 'denied') {
             next = { type: 'declined', name: camperMatch?.name || '', pointStatus: camperMatch?.pointStatus || '', visitCount };
             scannerVibrate([30, 80, 30]);
@@ -2425,7 +2480,7 @@
         // declined scans from the numerator (they didn't "come") and admin
         // taps entirely (not campers).
         const attendedCount = useMemo(
-          () => Object.values(attendance).filter((e) => e.access !== 'denied').length,
+          () => Object.values(attendance).filter((e) => e.access !== 'denied' && e.access !== 'banned').length,
           [attendance]
         );
         const totalEligible = useMemo(() => {
@@ -2434,7 +2489,7 @@
           const seen = new Set();
           let count = 0;
           (cache?.campers || []).forEach((c) => {
-            if (c.access === 'denied' || seen.has(c.camper_id)) return;
+            if (c.access === 'denied' || c.access === 'banned' || seen.has(c.camper_id)) return;
             seen.add(c.camper_id);
             count += 1;
           });
@@ -2449,8 +2504,9 @@
           const vipCount = entries.filter((e) => e.access === 'vip').length;
           const standardCount = entries.filter((e) => e.access === 'standard').length;
           const declinedCount = entries.filter((e) => e.access === 'denied').length;
+          const bannedCount = entries.filter((e) => e.access === 'banned').length;
           const repeatScans = entries.reduce((sum, e) => sum + Math.max(0, (e.count || 1) - 1), 0);
-          return { vipCount, standardCount, declinedCount, repeatScans, total: vipCount + standardCount };
+          return { vipCount, standardCount, declinedCount, bannedCount, repeatScans, total: vipCount + standardCount };
         }, [attendance]);
 
         if (showSummary) {
@@ -2466,6 +2522,7 @@
                   { label: 'VIP', value: summaryStats.vipCount },
                   { label: 'Standard', value: summaryStats.standardCount },
                   { label: 'Declined', value: summaryStats.declinedCount },
+                  { label: 'Banned', value: summaryStats.bannedCount },
                 ].map((s) => (
                   <div key={s.label}>
                     <p className="text-3xl font-extrabold tabular-nums">{s.value}</p>
@@ -2503,7 +2560,7 @@
               isAdmin ? 'justify-between py-10 sm:py-14' : 'justify-center',
               active ? active.bg : 'bg-slate-950',
               active ? active.textClass : 'text-white',
-              result?.type === 'declined' && 'scanner-decline-shake'
+              (result?.type === 'declined' || result?.type === 'banned') && 'scanner-decline-shake'
             )}
             style={{ overscrollBehavior: 'none' }}
           >
@@ -2604,7 +2661,7 @@
             {result && active && !isAdmin && (
               <div className={classNames('scanner-pop relative z-10 flex flex-col items-center gap-5', isVip && 'scanner-shimmer')}>
                 <active.icon size={88} className={active.iconClass} strokeWidth={1.75} />
-                {result.type !== 'declined' && (
+                {result.type !== 'declined' && result.type !== 'banned' && (
                   <div>
                     <h1 className={classNames('text-4xl font-extrabold tracking-tight sm:text-5xl', isVip ? 'text-white scanner-vip-text' : active.textClass)}>{result.name || 'Unknown'}</h1>
                     <p className={classNames('mt-2 text-lg font-bold uppercase tracking-[0.2em]', isVip ? 'text-white/75 scanner-vip-text' : active.subTextClass)}>
@@ -2734,7 +2791,18 @@
             supabase.from(CAMPER_CARDS_TABLE).select('id,camper_id,nfc_id'),
             supabase.from('competition_periods').select('*').order('start_date', { ascending: false }),
           ]);
-          setCampers(roster || []);
+          // Self-heal any bans whose timer already lapsed — there's no cron
+          // clearing these in the background, so the first load to notice
+          // does it. Clears in the DB and reflects it in the roster
+          // immediately, rather than waiting for the next admin action.
+          const lapsedIds = (roster || []).filter((c) => c.banned && !isBanActive(c)).map((c) => c.id);
+          const healedRoster = (roster || []).map((c) => (
+            lapsedIds.includes(c.id) ? { ...c, banned: false, ban_reason: null, ban_expires_at: null } : c
+          ));
+          if (lapsedIds.length > 0) {
+            supabase.from(CAMPER_WRITE_TABLE).update({ banned: false, ban_reason: null, ban_expires_at: null }).in('id', lapsedIds).then(() => {});
+          }
+          setCampers(healedRoster);
           setExtraCards(extraCardRows || []);
           setPeriods(periodRows || []);
           if (configRow) {
@@ -3027,6 +3095,36 @@
           }
         };
 
+        // ── Ban / unban ─────────────────────────────────────────────────────
+        // Keeps the camper's row and history intact — only flips `banned`,
+        // which LoginScreen and the Event Scanner both check before letting
+        // a card in (see camperMatch.banned / access === 'banned').
+        const toggleBan = async (camper) => {
+          const banning = !camper.banned;
+          if (banning) {
+            const durationInput = window.prompt(
+              `Ban ${camper.name}? Their card will stop working until unbanned.\n\nAuto-unban after how many hours? Leave blank to ban indefinitely (until manually unbanned).`,
+              ''
+            );
+            if (durationInput === null) return; // cancelled
+            const hours = durationInput.trim() === '' ? null : Number(durationInput);
+            if (hours !== null && (!Number.isFinite(hours) || hours <= 0)) {
+              notify('Enter a positive number of hours, or leave it blank for an indefinite ban.', 'error');
+              return;
+            }
+            const reason = window.prompt('Optional reason (shown to them):', '');
+            if (reason === null) return; // cancelled
+            const ban_expires_at = hours ? new Date(Date.now() + hours * 3600 * 1000).toISOString() : null;
+            const { error } = await supabase.from(CAMPER_WRITE_TABLE).update({ banned: true, ban_reason: reason.trim() || null, ban_expires_at }).eq('id', camper.id);
+            if (error) notify(`Ban failed: ${error.message}`, 'error');
+            else { notify(`${camper.name} banned${hours ? ` for ${hours}h` : ''}.`); load(); }
+          } else {
+            const { error } = await supabase.from(CAMPER_WRITE_TABLE).update({ banned: false, ban_reason: null, ban_expires_at: null }).eq('id', camper.id);
+            if (error) notify(`Unban failed: ${error.message}`, 'error');
+            else { notify(`${camper.name} unbanned.`); load(); }
+          }
+        };
+
         // ── Inline edit save ────────────────────────────────────────────────
         const saveEdit = async () => {
           if (!editRow) return;
@@ -3171,7 +3269,9 @@
         // ── Launch Event Scanner ─────────────────────────────────────────────
         // Snapshots the current roster into localStorage — name, this
         // event's door access level (standard/vip/denied, derived from
-        // weekly points vs. the standard/VIP thresholds), and the camper's
+        // weekly points vs. the standard/VIP thresholds — or 'banned' if
+        // the admin has banned the camper, which overrides all of that),
+        // and the camper's
         // overall point status (Gold/Platinum/Black from card_status,
         // unrelated to event access) — plus the admin_cards list, so
         // EventScannerPortal can resolve every scan with zero network calls
@@ -3192,7 +3292,7 @@
             .filter((c) => c.nfc_id)
             .flatMap((c) => {
               const pts = Number(c.weekly_points) || 0;
-              const access = pts >= vipThreshold ? 'vip' : pts >= standardThreshold ? 'standard' : 'denied';
+              const access = isBanActive(c) ? 'banned' : pts >= vipThreshold ? 'vip' : pts >= standardThreshold ? 'standard' : 'denied';
               const cardIds = [c.nfc_id, ...extraCardsFor(c.id).map((row) => row.nfc_id)];
               return cardIds.map((id) => ({
                 nfc_id: normalizeNfcId(id),
@@ -3476,7 +3576,7 @@
                   <table className="w-full min-w-[900px] text-left text-sm">
                     <thead className="accent-bg">
                       <tr>
-                        {['Name', 'NFC ID', 'Bunk', 'Class', 'Card Status', 'Weekly Pts', 'Lifetime Pts', 'Event Status', ''].map((head) => (
+                        {['Name', 'NFC ID', 'Bunk', 'Class', 'Card Status', 'Weekly Pts', 'Lifetime Pts', 'Event Status', 'Ban Status', ''].map((head) => (
                           <th key={head} className={`px-4 py-3 font-extrabold ${head === 'NFC ID' ? 'min-w-[220px]' : ''}`}>{head}</th>
                         ))}
                       </tr>
@@ -3562,6 +3662,18 @@
                             <td className="px-4 py-2">{displayValue(camper.total_points)}</td>
                             <td className="px-4 py-2">{displayValue(camper.weekly_event_status)}</td>
                             <td className="px-4 py-2">
+                              {camper.banned
+                                ? (
+                                  <span
+                                    title={[camper.ban_reason, camper.ban_expires_at ? `Auto-unbans ${new Date(camper.ban_expires_at).toLocaleString()}` : 'Indefinite ban'].filter(Boolean).join(' — ')}
+                                    className="inline-flex items-center gap-1 rounded-full border border-red-400/40 bg-red-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-red-500"
+                                  >
+                                    Banned{camper.ban_expires_at ? ` · till ${new Date(camper.ban_expires_at).toLocaleDateString()}` : ''}
+                                  </span>
+                                )
+                                : <span className="muted-text text-[10px] font-bold uppercase tracking-wide">Active</span>}
+                            </td>
+                            <td className="px-4 py-2">
                               <div className="flex items-center gap-1">
                                 {isEditing ? (
                                   <>
@@ -3571,6 +3683,16 @@
                                 ) : (
                                   <>
                                     <button onClick={() => setEditRow({ ...camper })} className="focus-ring inline-flex h-8 w-8 items-center justify-center rounded border line-border hover:scale-105" title="Edit"><PencilLine size={15} /></button>
+                                    <button
+                                      onClick={() => toggleBan(camper)}
+                                      className={classNames(
+                                        'focus-ring inline-flex h-8 w-8 items-center justify-center rounded border hover:scale-105',
+                                        camper.banned ? 'border-emerald-400/40 text-emerald-500' : 'border-red-400/40 text-red-500'
+                                      )}
+                                      title={camper.banned ? 'Unban' : 'Ban'}
+                                    >
+                                      <Ban size={15} />
+                                    </button>
                                     <button onClick={() => deleteCamper(camper)} className="focus-ring inline-flex h-8 w-8 items-center justify-center rounded border border-red-400/40 text-red-500 hover:scale-105" title="Delete"><Trash2 size={15} /></button>
                                   </>
                                 )}
