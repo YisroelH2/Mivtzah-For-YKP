@@ -3115,12 +3115,14 @@
             const reason = window.prompt('Optional reason (shown to them):', '');
             if (reason === null) return; // cancelled
             const ban_expires_at = hours ? new Date(Date.now() + hours * 3600 * 1000).toISOString() : null;
-            const { error } = await supabase.from(CAMPER_WRITE_TABLE).update({ banned: true, ban_reason: reason.trim() || null, ban_expires_at }).eq('id', camper.id);
+            const { data, error } = await supabase.from(CAMPER_WRITE_TABLE).update({ banned: true, ban_reason: reason.trim() || null, ban_expires_at }).eq('id', camper.id).select();
             if (error) notify(`Ban failed: ${error.message}`, 'error');
+            else if (!data || data.length === 0) notify(`Update was silently blocked — Row Level Security on "${CAMPER_WRITE_TABLE}" doesn't allow writes. Run the RLS fix SQL in Supabase.`, 'error');
             else { notify(`${camper.name} banned${hours ? ` for ${hours}h` : ''}.`); load(); }
           } else {
-            const { error } = await supabase.from(CAMPER_WRITE_TABLE).update({ banned: false, ban_reason: null, ban_expires_at: null }).eq('id', camper.id);
+            const { data, error } = await supabase.from(CAMPER_WRITE_TABLE).update({ banned: false, ban_reason: null, ban_expires_at: null }).eq('id', camper.id).select();
             if (error) notify(`Unban failed: ${error.message}`, 'error');
+            else if (!data || data.length === 0) notify(`Update was silently blocked — Row Level Security on "${CAMPER_WRITE_TABLE}" doesn't allow writes. Run the RLS fix SQL in Supabase.`, 'error');
             else { notify(`${camper.name} unbanned.`); load(); }
           }
         };
